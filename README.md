@@ -1,42 +1,55 @@
-# Neon Snake 3D
+# Neon Snake Online
 
-A neon arcade snake game built with Three.js (WebGL). Fully self-contained:
-no build step, no CDN calls, no assets to download at runtime.
+A neon slither-style snake game built with Three.js (WebGL) and peer-to-peer
+WebRTC multiplayer. Fully static: no build step, no backend server of your own,
+no CDN calls at runtime.
 
 **Play online: https://mdhemalakanda.github.io/neon-snake-3d/**
+
+## How it works
+
+- **PLAY SOLO** — huge circular arena (radius 250) with 5 AI snakes.
+- **CREATE ROOM** — starts a game and gives you a 4-letter room code. Share the
+  invite link (button in-game) or just the code.
+- **JOIN** — enter a friend's code to play in their arena.
+
+Multiplayer is peer-to-peer over WebRTC data channels (PeerJS free signaling
+cloud). The room creator's browser runs the authoritative simulation and
+streams state to everyone else, so:
+
+- best for 2-8 players,
+- the arena lives as long as the host keeps the tab open,
+- if the host leaves, the room ends.
 
 ## Controls
 
 | Action | Input |
 |---|---|
-| Steer | Arrow keys or WASD (swipe on touch) |
-| Start | Space / Enter / tap (any arrow also starts) |
-| Pause | P or Esc |
-| Sound on/off | M or the speaker button |
+| Steer | Mouse (snake chases the cursor), arrows / WASD, or drag on touch |
+| Boost | Hold SPACE, hold mouse button, or second finger (costs length) |
+| Sound | M or the speaker button |
 
-## Features
-
-- 17x17 neon arena with a pulsing shader grid, energy walls, ambient dust, and bloom post-processing
-- Rounded 3D snake with a cyan-to-violet gradient, smooth interpolated movement, googly eyes
-- Pulsing food crystal with its own point light; eating triggers particle bursts, a grid ripple, a score popup, and a speed increase
-- Synthesized WebAudio sound effects (no audio files)
-- Persistent best score, pause/auto-pause, start/pause/game-over screens, mobile swipe support
+Eat glowing orbs to grow longer and score points (+1 to +3). Dead snakes turn
+into food. Avoid other snakes' bodies and the arena wall — only your head is
+vulnerable. The leaderboard tracks the top 8 snakes in real time, and your
+best solo score is saved locally. Every snake wears its player's name.
 
 ## Run locally
 
-The game uses ES modules, so it needs any static HTTP server:
+ES modules need any static HTTP server:
 
 ```sh
 python3 -m http.server 8137
 # then open http://127.0.0.1:8137/
 ```
 
-## Self-test
+## Self-test hooks (inert without query params)
 
-`?autopilot=live` starts a game immediately (used for screenshots).
-`?autopilot=eat` synchronously drives the game logic (eat, grow, wall death)
-and writes the outcome into the document's `data-autopilot` attribute, so the
-core loop can be smoke-tested in headless browsers where requestAnimationFrame
-does not tick.
+- `?autopilot=eat` — synchronously drives the simulation (eat, grow, wall death)
+  and writes the result to the document's `data-autopilot` attribute.
+- `?autopilot=live` — starts a solo game immediately (screenshots).
+- `?nettest=host&room=CODE` / `?nettest=join&room=CODE` — headless multiplayer
+  smoke test; reports into `data-net`.
 
-Built with [Three.js](https://threejs.org/) r170 (vendored in `vendor/`).
+Built with [Three.js](https://threejs.org/) r170 and
+[PeerJS](https://peerjs.com/) 1.5 (both vendored in `vendor/`).

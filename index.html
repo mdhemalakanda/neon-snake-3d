@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#040713">
-<title>Neon Snake 3D</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='6' fill='%23040713'/%3E%3Crect x='9' y='9' width='7' height='7' rx='2' fill='%2319e6ff'/%3E%3Crect x='16' y='16' width='7' height='7' rx='2' fill='%23ff2e7e'/%3E%3C/svg%3E">
+<title>Neon Snake Online</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='6' fill='%23040713'/%3E%3Ccircle cx='12' cy='12' r='4' fill='%2319e6ff'/%3E%3Ccircle cx='21' cy='20' r='4' fill='%23ff2e7e'/%3E%3C/svg%3E">
 <!-- Loaded async so an offline/blocked network never delays the game; CSS has a full fallback stack -->
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
@@ -18,30 +18,53 @@
   }
 }
 </script>
+<!-- PeerJS (WebRTC multiplayer), classic script exposing window.Peer -->
+<script src="./vendor/peerjs.min.js"></script>
 </head>
 <body>
 <canvas id="game"></canvas>
 <div id="fx"></div>
 
 <div id="hud">
-  <div class="stat"><span class="label">SCORE</span><span class="value" id="score">0</span></div>
-  <div class="stat right"><span class="label">BEST</span><span class="value" id="best">0</span></div>
+  <div class="stats">
+    <div class="stat"><span class="label">SCORE</span><span class="value" id="score">0</span></div>
+    <div class="stat"><span class="label">LENGTH</span><span class="value" id="length">0</span></div>
+  </div>
+  <div id="lb-box">
+    <div class="label">LEADERBOARD</div>
+    <ol id="lb"></ol>
+  </div>
 </div>
 
-<div id="popups"></div>
+<div id="room-chip" class="hidden">
+  <span class="label">ROOM</span>
+  <span id="room-code" class="value"></span>
+  <button id="btn-copy" title="Copy invite link">COPY LINK</button>
+</div>
+
+<div id="toast" class="hidden"></div>
 
 <button id="mute-btn" title="Sound on/off (M)" aria-label="Toggle sound">&#128266;</button>
 
 <div id="overlay" class="show">
   <div class="panel" id="panel-menu">
     <h1>NEON<br><span class="accent">SNAKE</span></h1>
-    <p class="sub">three.js arcade &middot; fully 3d</p>
-    <div class="keys">
-      <div><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> &mdash; steer</div>
-      <div><kbd>SPACE</kbd> start &middot; <kbd>P</kbd> pause &middot; <kbd>M</kbd> sound</div>
-      <div class="touch-hint">on touch: swipe to steer &middot; tap to start</div>
+    <p class="sub">online multiplayer &middot; giant arena</p>
+    <input id="name-input" class="field" maxlength="12" placeholder="your snake name" autocomplete="off" spellcheck="false">
+    <div class="btnrow">
+      <button class="cta" id="btn-solo">PLAY SOLO</button>
+      <button class="cta pink" id="btn-host">CREATE ROOM</button>
     </div>
-    <button class="cta" id="btn-play">PLAY</button>
+    <div class="btnrow">
+      <input id="code-input" class="field code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+      <button class="cta pink" id="btn-join">JOIN</button>
+    </div>
+    <div id="net-status" class="netstatus"></div>
+    <div class="keys">
+      <div>steer with mouse or arrows / WASD &middot; boost with SPACE or hold click</div>
+      <div>touch: drag to steer &middot; second finger to boost</div>
+      <div>eat orbs to grow &middot; dodge other snakes &middot; the wall bites</div>
+    </div>
   </div>
 
   <div class="panel hidden" id="panel-over">
@@ -51,12 +74,19 @@
       <div class="stat"><span class="label">SCORE</span><span class="value" id="final-score">0</span></div>
       <div class="stat"><span class="label">BEST</span><span class="value" id="final-best">0</span></div>
     </div>
-    <button class="cta pink" id="btn-again">PLAY AGAIN</button>
+    <div id="over-lb-box">
+      <div class="label">TOP PLAYERS</div>
+      <ol id="over-lb"></ol>
+    </div>
+    <div class="btnrow">
+      <button class="cta" id="btn-again">PLAY AGAIN</button>
+      <button class="cta ghost" id="btn-menu">MENU</button>
+    </div>
   </div>
 
-  <div class="panel hidden" id="panel-pause">
-    <h2>PAUSED</h2>
-    <p class="sub">press <kbd>P</kbd> or tap to resume</p>
+  <div class="panel hidden" id="panel-wait">
+    <h2>RESPAWNING...</h2>
+    <p class="sub">waiting for the arena</p>
   </div>
 </div>
 
