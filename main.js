@@ -70,11 +70,92 @@ class SFX {
     osc.connect(g); g.connect(this.master);
     osc.start(t); osc.stop(t + dur + 0.05);
   }
-  eat() { this.tone({ type: 'triangle', f0: 560, f1: 1020, dur: 0.1, vol: 0.4 }); }
-  die() { this.tone({ type: 'sawtooth', f0: 320, f1: 52, dur: 0.65, vol: 0.4 }); }
+  ensureNoise() {
+    if (this.noiseBuf || !this.ctx) return;
+    const b = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    this.noiseBuf = b;
+  }
+  eat() {
+    this.tone({ type: 'triangle', f0: 620, f1: 1180, dur: 0.09, vol: 0.4 });
+    this.tone({ type: 'sine', f0: 1240, f1: 1860, dur: 0.09, vol: 0.16, delay: 0.03 });
+  }
+  noiseBurst(dur, vol, f) {
+    if (!this.ctx || this.muted) return;
+    this.ensureNoise();
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const flt = this.ctx.createBiquadFilter();
+    flt.type = 'lowpass';
+    flt.frequency.setValueAtTime(f, t);
+    flt.frequency.exponentialRampToValueAtTime(120, t + dur);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(flt); flt.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + dur);
+  }
+  die() {
+    this.noiseBurst(0.55, 0.5, 1400);
+    this.tone({ type: 'sawtooth', f0: 280, f1: 46, dur: 0.7, vol: 0.4 });
+  }
+  setBoost(on) {
+    if (!this.ctx) return;
+    this.ensureNoise();
+    if (!this.boostNode) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      src.loop = true;
+      const flt = this.ctx.createBiquadFilter();
+      flt.type = 'bandpass';
+      flt.frequency.value = 650;
+      flt.Q.value = 0.7;
+      const g = this.ctx.createGain();
+      g.gain.value = 0.0001;
+      src.connect(flt); flt.connect(g); g.connect(this.master);
+      src.start();
+      this.boostNode = { src, g };
+    }
+    const t = this.ctx.currentTime;
+    this.boostNode.g.gain.cancelScheduledValues(t);
+    this.boostNode.g.gain.setTargetAtTime(on && !this.muted ? 0.13 : 0.0001, t, 0.08);
+  }
   start() { [392, 523, 659, 784].forEach((f, i) => this.tone({ type: 'triangle', f0: f, dur: 0.1, vol: 0.28, delay: i * 0.07 })); }
 }
 const sfx = new SFX();
+
+class Music {
+  constructor(sfx) { this.sfx = sfx; this.timer = null; this.next = 0; this.step = 0; }
+  start() {
+    if (!this.sfx.ctx || this.timer) return;
+    this.next = this.sfx.ctx.currentTime + 0.2;
+    this.timer = setInterval(() => this.pump(), 150);
+  }
+  pump() {
+    const ctx = this.sfx.ctx;
+    if (!ctx || this.sfx.muted) return;
+    while (this.next < ctx.currentTime + 0.8) {
+      this.bar(this.next);
+      this.next += 2.0;
+    }
+  }
+  bar(t) {
+    const now = this.sfx.ctx.currentTime;
+    const bass = [55, 55, 65.4, 49][this.step % 4];
+    this.sfx.tone({ type: 'sine', f0: bass, f1: bass, dur: 1.9, vol: 0.14, delay: Math.max(0, t - now) });
+    const scale = [220, 261.6, 293.7, 329.6, 392, 440, 523.3];
+    for (let i = 0; i < 8; i++) {
+      if (Math.random() < 0.5) {
+        const f = scale[(Math.random() * scale.length) | 0] * (Math.random() < 0.3 ? 2 : 1);
+        this.sfx.tone({ type: 'triangle', f0: f, f1: f, dur: 0.4, vol: 0.045, delay: Math.max(0, t - now) + i * 0.25 });
+      }
+    }
+    this.step++;
+  }
+}
+const music = new Music(sfx);
 
 /* ---------- state ---------- */
 const S = {
@@ -92,7 +173,7 @@ const S = {
   lb: [],
   input: { a: -Math.PI / 2 },
   spaceHeld: false, mouseBoost: false, touchBoost: false,
-  acc: 0, sendT: 0, hudT: 0, mapT: 0,
+  acc: 0, sendT: 0, hudT: 0, mapT: 0, lastBoost: null,
   lastOwnScore: 0,
   best: loadBest(),
   camHead: { x: 0, z: 0, th: 0.5 },
@@ -190,6 +271,7 @@ function beginPlay() {
   hideOverlay();
   netStatus('');
   sfx.start();
+  music.start();
 }
 
 function endGameNow() {
@@ -338,6 +420,8 @@ function gameOver(score, lbList) {
   S.screen = 'over';
   el.endBtn.classList.add('hidden');
   el.minimap.classList.add('hidden');
+  sfx.setBoost(false);
+  S.lastBoost = null;
   if (S.own) S.own.dead = true;
   sfx.die();
   const pts = S.own ? sampleBody(S.own) : [];
@@ -410,45 +494,65 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') S.spaceHeld = false;
 });
 
-const steerPointers = new Map();   // pointerId -> {x0, y0}
-let steerPointerId = null;
+const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+const activeTouches = new Map();   // pointerId -> {x, y} (touch only)
+let steerTouchId = null;
+let pinchRef = null;
+
+function steerToward(x, y) {
+  const sx = x - window.innerWidth / 2;
+  const sy = y - window.innerHeight / 2;
+  if (Math.hypot(sx, sy) > 24) S.input.a = Math.atan2(sy, sx);
+}
+function applyTouchBoost() {
+  S.touchBoost = activeTouches.size >= 2 && !pinchRef;
+}
 
 window.addEventListener('pointerdown', (e) => {
   sfx.init();
   if (S.screen !== 'playing') return;
   if (e.target && e.target.closest && e.target.closest('button')) return;
-  if (e.pointerType === 'mouse') {
-    S.mouseBoost = true;
-    return;
-  }
-  if (steerPointerId === null) {
-    steerPointerId = e.pointerId;
-    steerPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (e.pointerType === 'mouse') { S.mouseBoost = true; return; }
+  activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activeTouches.size === 1) {
+    steerTouchId = e.pointerId;
+    steerToward(e.clientX, e.clientY);
   } else {
     S.touchBoost = true;
+    pinchRef = null;
   }
 });
 window.addEventListener('pointermove', (e) => {
-  if (e.pointerType === 'mouse') {
-    const sx = e.clientX - window.innerWidth / 2;
-    const sy = e.clientY - window.innerHeight / 2;
-    if (Math.abs(sx) + Math.abs(sy) > 8) S.input.a = Math.atan2(sy, sx);
-    return;
-  }
-  const p = steerPointers.get(e.pointerId);
-  if (p && e.pointerId === steerPointerId) {
-    const dx = e.clientX - p.x, dy = e.clientY - p.y;
-    if (Math.hypot(dx, dy) > 18) S.input.a = Math.atan2(dy, dx);
+  if (e.pointerType === 'mouse') { steerToward(e.clientX, e.clientY); return; }
+  if (!activeTouches.has(e.pointerId)) return;
+  activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activeTouches.size >= 2) {
+    const pts = [...activeTouches.values()];
+    const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (pinchRef) {
+      if (S.view) S.view.zoom = clampN((pinchRef.zoom0 * pinchRef.d0) / Math.max(d, 24), 0.55, 2.4);
+    } else {
+      pinchRef = { d0: d, zoom0: S.view ? S.view.zoom : 1 };
+    }
+    applyTouchBoost();
+  } else if (e.pointerId === steerTouchId) {
+    steerToward(e.clientX, e.clientY);
   }
 });
 function pointerEnd(e) {
   if (e.pointerType === 'mouse') { S.mouseBoost = false; return; }
-  if (e.pointerId === steerPointerId) steerPointerId = null;
-  steerPointers.delete(e.pointerId);
-  if (steerPointerId === null) S.touchBoost = false;
+  activeTouches.delete(e.pointerId);
+  if (e.pointerId === steerTouchId) steerTouchId = null;
+  if (activeTouches.size < 2) pinchRef = null;
+  applyTouchBoost();
 }
 window.addEventListener('pointerup', pointerEnd);
 window.addEventListener('pointercancel', pointerEnd);
+
+window.addEventListener('wheel', (e) => {
+  if (S.screen !== 'playing' || !S.view) return;
+  S.view.zoom = clampN(S.view.zoom * (e.deltaY > 0 ? 1.09 : 0.92), 0.55, 2.4);
+}, { passive: true });
 window.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && S.screen === 'playing' && S.mode !== 'client') {
@@ -461,6 +565,7 @@ function toggleMute() {
   sfx.init();
   sfx.muted = !sfx.muted;
   el.muteBtn.textContent = sfx.muted ? '\u{1F507}' : '\u{1F50A}';
+  sfx.setBoost(false);
 }
 el.muteBtn.addEventListener('click', toggleMute);
 
@@ -554,6 +659,10 @@ function loop(now) {
 function tick(dt) {
   const playing = S.screen === 'playing';
   const boost = playing && boostNow();
+  if (boost !== S.lastBoost) {
+    S.lastBoost = boost;
+    sfx.setBoost(boost);
+  }
 
   if (S.mode === 'client') {
     if (S.own && !S.own.dead && playing) {

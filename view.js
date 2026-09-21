@@ -184,6 +184,7 @@ export class View {
     this.camera = new THREE.PerspectiveCamera(52, 1, 0.1, 500);
     this.camPos = new THREE.Vector3(0, 24, 17);
     this.boostAmt = 0;
+    this.zoom = 1;
 
     this.scene.add(new THREE.AmbientLight(0x8fb3ff, 0.7));
     const keyLight = new THREE.DirectionalLight(0xbfefff, 1.0);
@@ -467,7 +468,8 @@ export class View {
   }
 
   follow(head, thickness, boosting, dt) {
-    const dist = 13 + thickness * 14;
+    const fit = Math.min(2.4, Math.max(1, 1.35 / this.camera.aspect));
+    const dist = (13 + thickness * 14) * fit * (this.zoom || 1);
     const desiredX = head.x + CAM_DIR.x * dist;
     const desiredY = CAM_DIR.y * dist;
     const desiredZ = head.z + CAM_DIR.z * dist;

@@ -210,10 +210,12 @@ h2 {
 }
 
 @media (max-width: 560px) {
-  #hud { padding: 10px 12px; }
+  #hud { padding: 10px; }
   .stat .value { font-size: 20px; }
-  .stats { gap: 18px; }
-  #lb-box { min-width: 130px; }
+  .stats { gap: 14px; }
+  #lb-box { min-width: 0; max-width: 42vw; overflow: hidden; }
+  #lb li { gap: 6px; font-size: 9.5px; padding: 1px 0; }
+  #lb li span:first-child { max-width: 24vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel { padding: 24px 16px; }
   .finals { gap: 28px; }
 }
