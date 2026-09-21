@@ -16,7 +16,7 @@ const el = {
   btnSolo: $('btn-solo'), btnHost: $('btn-host'), btnJoin: $('btn-join'),
   btnAgain: $('btn-again'), btnMenu: $('btn-menu'), btnCopy: $('btn-copy'),
   roomChip: $('room-chip'), roomCode: $('room-code'),
-  toast: $('toast'), muteBtn: $('mute-btn'), netStatus: $('net-status'),
+  toast: $('toast'), muteBtn: $('mute-btn'), netStatus: $('net-status'), endBtn: $('end-btn'),
   newBest: $('new-best'), finalScore: $('final-score'), finalBest: $('final-best'), overLb: $('over-lb'),
 };
 
@@ -177,6 +177,7 @@ function startJoinFlow(code) {
 function beginPlay() {
   ensureView();
   S.screen = 'playing';
+  el.endBtn.classList.remove('hidden');
   S.acc = 0;
   S.lastOwnScore = S.own ? S.own.score : 0;
   hideOverlay();
@@ -184,9 +185,25 @@ function beginPlay() {
   sfx.start();
 }
 
+function endGameNow() {
+  if (S.screen !== 'playing') return;
+  const score = S.own ? S.own.score | 0 : 0;
+  if (S.mode === 'client') {
+    S.net && S.net.sendToHost({ t: 'bye' });
+    if (S.own) S.own.dead = true;
+    gameOver(score, S.lb);
+  } else if (S.world && S.own && !S.own.dead) {
+    S.world.kill(S.own);
+    gameOver(score, S.world.leaderboard());
+  } else {
+    gameOver(score, S.lb);
+  }
+}
+
 function backToMenu() {
   cleanupNet();
   S.screen = 'menu';
+  el.endBtn.classList.add('hidden');
   S.world = null;
   S.own = null;
   S.remotes.clear();
@@ -224,6 +241,8 @@ function handleClientMsg(conn, m) {
   } else if (m.t === 'respawn') {
     const s = S.world.respawn(conn.peer);
     if (s) conn.send({ t: 'spawn', x: s.x, z: s.z, a: s.a });
+  } else if (m.t === 'bye') {
+    S.world.removeSnake(conn.peer);
   }
 }
 
@@ -247,6 +266,7 @@ function handleHostMsg(m, markWelcomed) {
     S.own = makeSnake(S.ownId, S.name, m.x, m.z, m.a);
     S.lastOwnScore = 0;
     S.screen = 'playing';
+    el.endBtn.classList.remove('hidden');
     hideOverlay();
   }
 }
@@ -307,6 +327,7 @@ function applySnapshot(m) {
 function gameOver(score, lbList) {
   if (S.screen === 'over') return;
   S.screen = 'over';
+  el.endBtn.classList.add('hidden');
   if (S.own) S.own.dead = true;
   sfx.die();
   const pts = S.own ? sampleBody(S.own) : [];
@@ -341,6 +362,7 @@ function respawnMe() {
     S.own = S.world.get(S.ownId);
     S.lastOwnScore = 0;
     S.screen = 'playing';
+    el.endBtn.classList.remove('hidden');
     hideOverlay();
     sfx.start();
   }
@@ -452,6 +474,7 @@ el.btnSolo.addEventListener('click', () => { sfx.init(); startFromMenu('solo'); 
 el.btnHost.addEventListener('click', () => { sfx.init(); startFromMenu('host'); });
 el.btnJoin.addEventListener('click', () => { sfx.init(); startFromMenu('join'); });
 el.btnAgain.addEventListener('click', respawnMe);
+el.endBtn.addEventListener('click', () => { sfx.init(); endGameNow(); });
 el.btnMenu.addEventListener('click', backToMenu);
 el.btnCopy.addEventListener('click', () => {
   const link = `${location.origin}${location.pathname}?room=${S.room}`;

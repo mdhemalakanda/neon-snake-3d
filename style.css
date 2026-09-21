@@ -82,6 +82,18 @@ body {
   color: #ffd7e6; font-size: 12px; letter-spacing: 2px;
 }
 
+/* end game button */
+#end-btn {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 5;
+  font-family: inherit; font-size: 10px; font-weight: 700; letter-spacing: 3px;
+  color: #ffd7e6; background: rgba(8, 16, 34, 0.6);
+  border: 1px solid rgba(255, 46, 126, 0.45); border-radius: 999px;
+  padding: 9px 22px; cursor: pointer;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#end-btn:hover { background: rgba(255, 46, 126, 0.2); }
+
 /* mute button */
 #mute-btn {
   position: fixed; right: 18px; bottom: 16px; z-index: 7;
@@ -99,10 +111,10 @@ body {
   display: flex; align-items: center; justify-content: center;
   background: rgba(3, 6, 16, 0.55);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.35s ease;
+  opacity: 0; pointer-events: none; visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
 }
-#overlay.show { opacity: 1; pointer-events: auto; }
+#overlay.show { opacity: 1; pointer-events: auto; visibility: visible; transition: opacity 0.35s ease; }
 .panel { text-align: center; padding: 36px 44px; max-width: 94vw; max-height: 96vh; overflow-y: auto; }
 .panel.hidden { display: none; }
 

@@ -4,19 +4,40 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { CFG, radiusOf, hueOf } from './game.js';
 
 const CAM_DIR = new THREE.Vector3(0, 0.82, 0.58).normalize();
 const UP = new THREE.Vector3(0, 1, 0);
 
-const segGeo = new RoundedBoxGeometry(0.92, 0.92, 0.92, 3, 0.26);
-const headGeo = new RoundedBoxGeometry(1.08, 1.08, 1.08, 4, 0.32);
-const eyeGeo = new THREE.SphereGeometry(0.11, 12, 12);
-const pupilGeo = new THREE.SphereGeometry(0.055, 10, 10);
+const eyeGeo = new THREE.SphereGeometry(0.17, 12, 12);
+const pupilGeo = new THREE.SphereGeometry(0.085, 10, 10);
 const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.8, roughness: 0.2 });
 const pupilMat = new THREE.MeshStandardMaterial({ color: 0x061018, roughness: 0.3 });
-const segMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.05 });
+const skullGeo = new THREE.SphereGeometry(1, 24, 18);
+const tubeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.45, metalness: 0.05 });
+const RADIAL = 8;
+const MAX_RINGS = 300;
+
+function makeTubeGeometry() {
+  const geo = new THREE.BufferGeometry();
+  const cols = RADIAL + 1;
+  const count = MAX_RINGS * cols;
+  const pos = new Float32Array(count * 3);
+  const nor = new Float32Array(count * 3);
+  const col = new Float32Array(count * 3);
+  const idx = [];
+  for (let r = 0; r < MAX_RINGS - 1; r++) {
+    for (let s = 0; s < RADIAL; s++) {
+      const a = r * cols + s, b = (r + 1) * cols + s, c = (r + 1) * cols + s + 1, d = r * cols + s + 1;
+      idx.push(a, b, d, b, c, d);
+    }
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setIndex(idx);
+  return geo;
+}
 
 const FOOD_COLORS = { 1: 0.52, 2: 0.9, 3: 0.13 };
 
@@ -30,21 +51,31 @@ function registerNameRedraw(fn) {
 
 class SnakeView {
   constructor(scene, name, hue) {
+    this.scene = scene;
     this.hue = hue;
-    this.inst = new THREE.InstancedMesh(segGeo, segMat, CFG.MAX_SEGS);
-    this.inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.inst.frustumCulled = false;
-    const white = new THREE.Color(1, 1, 1);
-    for (let i = 0; i < CFG.MAX_SEGS; i++) this.inst.setColorAt(i, white);
-    scene.add(this.inst);
+    this.geo = makeTubeGeometry();
+    this.mesh = new THREE.Mesh(this.geo, tubeMat);
+    this.mesh.frustumCulled = false;
+    scene.add(this.mesh);
 
-    this.headMat = new THREE.MeshStandardMaterial({ color: 0x05070f, roughness: 0.4, emissive: new THREE.Color().setHSL(hue, 1, 0.6), emissiveIntensity: 0.55 });
-    this.head = new THREE.Mesh(headGeo, this.headMat);
+    this.colA = new THREE.Color().setHSL(hue, 1.0, 0.6).multiplyScalar(1.25);
+    this.colB = new THREE.Color().setHSL((hue + 0.22) % 1, 0.9, 0.5).multiplyScalar(1.1);
+    this.tmpC = new THREE.Color();
+    this.lastRings = -1;
+
+    this.headMat = new THREE.MeshStandardMaterial({
+      color: 0x05070f, roughness: 0.4,
+      emissive: new THREE.Color().setHSL(hue, 1, 0.55), emissiveIntensity: 0.45,
+    });
+    this.head = new THREE.Group();
+    const skull = new THREE.Mesh(skullGeo, this.headMat);
+    skull.scale.set(1.0, 0.78, 1.4);
+    this.head.add(skull);
     for (const sx of [-1, 1]) {
       const e = new THREE.Mesh(eyeGeo, eyeMat);
-      e.position.set(0.2 * sx, 0.16, 0.44);
+      e.position.set(0.42 * sx, 0.34, 0.72);
       const p = new THREE.Mesh(pupilGeo, pupilMat);
-      p.position.set(0, 0, 0.09);
+      p.position.set(0, 0, 0.12);
       e.add(p);
       this.head.add(e);
     }
@@ -52,45 +83,76 @@ class SnakeView {
 
     this.sprite = View.makeNameSprite(name, hue);
     scene.add(this.sprite);
-
-    this.colA = new THREE.Color().setHSL(hue, 1.0, 0.6).multiplyScalar(1.35);
-    this.colB = new THREE.Color().setHSL((hue + 0.22) % 1, 0.9, 0.48).multiplyScalar(1.2);
-    this.tmpC = new THREE.Color();
-    this.lastCount = -1;
-    this._m = new THREE.Matrix4();
-    this._q = new THREE.Quaternion();
-    this._v = new THREE.Vector3();
-    this._sc = new THREE.Vector3();
   }
 
   update(pts, thickness, angle, time, scene, showName, fade) {
-    const n = Math.min(pts.length, CFG.MAX_SEGS);
-    const rotY = Math.atan2(Math.cos(angle), Math.sin(angle));
-    this._q.setFromAxisAngle(UP, rotY);
+    const posA = this.geo.attributes.position.array;
+    const norA = this.geo.attributes.normal.array;
+    const n = Math.min(pts.length, MAX_RINGS);
+    const cols = RADIAL + 1;
+
     for (let i = 0; i < n; i++) {
       const p = pts[i];
-      const shrink = 1.04 - 0.28 * (i / n);
-      const wob = Math.sin(time * 6 - i * 0.4) * 0.03;
-      this._v.set(p.x, 0.44 + wob * thickness, p.z);
-      this._sc.setScalar(thickness * shrink);
-      this._m.compose(this._v, this._q, this._sc);
-      this.inst.setMatrixAt(i, this._m);
-    }
-    this.inst.count = n;
-    this.inst.instanceMatrix.needsUpdate = true;
-    if (this.lastCount !== n) {
-      for (let i = 0; i < n; i++) {
-        this.tmpC.copy(this.colA).lerp(this.colB, i / Math.max(1, n - 1));
-        this.inst.setColorAt(i, this.tmpC);
+      const pa = pts[Math.max(0, i - 1)];
+      const pb = pts[Math.min(n - 1, i + 1)];
+      let tx = pb.x - pa.x, tz = pb.z - pa.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      tx /= tl; tz /= tl;
+      const nx = -tz, nz = tx;
+      const wig = Math.sin(time * 4.5 - i * 0.38) * 0.13 * thickness;
+      const cx = p.x + nx * wig;
+      const cz = p.z + nz * wig;
+      const cy = 0.42 + Math.sin(time * 5 - i * 0.5) * 0.02;
+      const t = n <= 1 ? 0 : i / (n - 1);
+      let rad = thickness;
+      if (i === 0) rad *= 0.8; else if (i === 1) rad *= 0.92; else if (i === 2) rad *= 0.98;
+      const tailStart = 0.7;
+      if (t > tailStart) {
+        const k = (t - tailStart) / (1 - tailStart);
+        rad *= 1 - 0.9 * k * k;
       }
-      if (this.inst.instanceColor) this.inst.instanceColor.needsUpdate = true;
-      this.lastCount = n;
+      for (let s = 0; s <= RADIAL; s++) {
+        const phi = (s / RADIAL) * Math.PI * 2;
+        const cp = Math.cos(phi), sp = Math.sin(phi);
+        const o = (i * cols + s) * 3;
+        posA[o] = cx + nx * cp * rad;
+        posA[o + 1] = cy + sp * rad;
+        posA[o + 2] = cz + nz * cp * rad;
+        norA[o] = nx * cp;
+        norA[o + 1] = sp;
+        norA[o + 2] = nz * cp;
+      }
     }
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.normal.needsUpdate = true;
+    this.geo.setDrawRange(0, Math.max(0, (n - 1)) * RADIAL * 6);
+
+    if (this.lastRings !== n) {
+      const colA2 = this.geo.attributes.color.array;
+      for (let i = 0; i < n; i++) {
+        const t = n <= 1 ? 0 : i / (n - 1);
+        this.tmpC.copy(this.colA).lerp(this.colB, t);
+        const band = 0.86 + 0.14 * Math.sin(i * 1.15);
+        for (let s = 0; s <= RADIAL; s++) {
+          const o = (i * cols + s) * 3;
+          colA2[o] = this.tmpC.r * band;
+          colA2[o + 1] = this.tmpC.g * band;
+          colA2[o + 2] = this.tmpC.b * band;
+        }
+      }
+      this.geo.attributes.color.needsUpdate = true;
+      this.lastRings = n;
+    }
+
     const hp = pts[0];
-    this.head.position.set(hp.x, 0.46, hp.z);
-    this.head.rotation.y = rotY;
+    this.head.position.set(
+      hp.x + Math.cos(angle) * thickness * 0.45, 0.42,
+      hp.z + Math.sin(angle) * thickness * 0.45
+    );
     this.head.scale.setScalar(thickness);
-    this.headMat.emissiveIntensity = 0.45 + 0.15 * Math.sin(time * 3);
+    this.head.rotation.y = Math.atan2(Math.cos(angle), Math.sin(angle));
+    this.headMat.emissiveIntensity = 0.4 + 0.12 * Math.sin(time * 3);
+
     this.sprite.visible = showName !== false && fade > 0.02;
     this.sprite.material.opacity = 0.95 * fade;
     this.sprite.position.set(hp.x, 0.45 + thickness * 2.1 + 0.8, hp.z);
@@ -99,9 +161,10 @@ class SnakeView {
   }
 
   dispose(scene) {
-    scene.remove(this.inst, this.head, this.sprite);
-    if (this.sprite.userData.redraw) nameRedraws.delete(this.sprite.userData.redraw);
+    scene.remove(this.mesh, this.head, this.sprite);
+    this.geo.dispose();
     this.headMat.dispose();
+    if (this.sprite.userData.redraw) nameRedraws.delete(this.sprite.userData.redraw);
     this.sprite.material.map.dispose();
     this.sprite.material.dispose();
   }
