@@ -836,7 +836,7 @@ function tick(dt) {
 
   S.mapT -= dt;
   if (S.mapT <= 0) {
-    S.mapT = 0.09;
+    S.mapT = 0.15;
     drawMinimap(list);
   }
 

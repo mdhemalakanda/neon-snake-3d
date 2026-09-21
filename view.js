@@ -5,7 +5,7 @@ import { CFG, SPECIES, speciesFor, mulberry32 } from './game.js';
 
 const CAM_DIR = new THREE.Vector3(0, 0.82, 0.58).normalize();
 
-const RADIAL = 12;
+const RADIAL = 10;
 const MAX_RINGS = 300;
 const REPEAT_LEN = 5.5;   // world units per texture repeat along the body
 
@@ -549,7 +549,7 @@ function mergeParts(parts) {
   return geo;
 }
 
-const SPH = new THREE.SphereGeometry(1, 10, 8);
+const SPH = new THREE.SphereGeometry(1, 7, 5);   /* low-poly: instanced by the hundreds for prey */
 const CYL = new THREE.CylinderGeometry(1, 1, 1, 6);
 const PART = (x, y, z, sx, sy, sz, color, rx = 0, ry = 0, rz = 0, geo = SPH) => ({ geo, x, y, z, sx, sy, sz, color, rx, ry, rz });
 
@@ -733,6 +733,7 @@ class SnakeView {
     this.sprite = View.makeNameSprite(name, this.sp.ui);
     scene.add(this.sprite);
     this.lastRings = -1;
+    this.norFlip = false;
   }
 
   update(pts, thickness, angle, time, showName, fade) {
@@ -742,6 +743,8 @@ class SnakeView {
     const norA = this.geo.attributes.normal.array;
     const n = Math.min(pts.length, MAX_RINGS);
     const cols = RADIAL + 1;
+    /* normals barely change frame to frame: refresh them every other frame */
+    const doNor = this.norFlip = !this.norFlip;
 
     for (let i = 0; i < n; i++) {
       const p = pts[i];
@@ -773,13 +776,15 @@ class SnakeView {
         posA[o] = cx + nx * cp * r;
         posA[o + 1] = cy + sph * r;
         posA[o + 2] = cz + nz * cp * r;
-        norA[o] = nx * cp;
-        norA[o + 1] = sph;
-        norA[o + 2] = nz * cp;
+        if (doNor) {
+          norA[o] = nx * cp;
+          norA[o + 1] = sph;
+          norA[o + 2] = nz * cp;
+        }
       }
     }
     this.geo.attributes.position.needsUpdate = true;
-    this.geo.attributes.normal.needsUpdate = true;
+    if (doNor) this.geo.attributes.normal.needsUpdate = true;
     this.geo.setDrawRange(0, Math.max(0, n - 1) * RADIAL * 6);
 
     const hp = pts[0];
@@ -824,7 +829,7 @@ export class View {
   constructor(canvas) {
     const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
     this.isMobileLike = coarse || Math.min(window.innerWidth, window.innerHeight) < 500;
-    this.baseDpr = Math.min(window.devicePixelRatio || 1, this.isMobileLike ? 1.0 : 2);
+    this.baseDpr = Math.min(window.devicePixelRatio || 1, this.isMobileLike ? 1.0 : 1.5);
     this.resScale = this.isMobileLike ? 0.9 : 1;
     this.frameAvg = 16;
     this.lastAdjust = 0;
@@ -839,7 +844,7 @@ export class View {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x33402a);
@@ -1003,7 +1008,7 @@ export class View {
     plantTex.colorSpace = THREE.SRGBColorSpace;
 
     /* grass */
-    const nGrass = mobile ? 1500 : 3800;
+    const nGrass = mobile ? 1200 : 3000;
     const grassGeo = crossQuadsGeometry(1.3, 1);
     const grassMat = new THREE.MeshLambertMaterial({ map: grassTex, alphaTest: 0.5 });
     addSway(grassMat, this.sway, 0.22);
@@ -1068,7 +1073,7 @@ export class View {
     this.scene.add(bushes);
 
     /* fallen leaves flat on the ground */
-    const nLitter = mobile ? 160 : 380;
+    const nLitter = mobile ? 160 : 300;
     const litterMat = new THREE.MeshLambertMaterial({
       map: leafTex, alphaTest: 0.3, side: THREE.DoubleSide, color: 0x9a8a62,
       polygonOffset: true, polygonOffsetFactor: -2,
@@ -1155,7 +1160,6 @@ export class View {
       pm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       pm.frustumCulled = false;
       pm.count = 0;
-      pm.castShadow = true;
       this.scene.add(pm);
     }
     this._fm = new THREE.Matrix4();
@@ -1176,7 +1180,7 @@ export class View {
     for (const f of list) f._d2 = (f.x - cx) * (f.x - cx) + (f.z - cz) * (f.z - cz);
     list.sort((a, b) => a._d2 - b._d2);
     const counts = [0, 0, 0];
-    const cap = 560;
+    const cap = 220;   /* only the nearest prey is drawn; fog hides the rest */
     const n = Math.min(list.length, cap * 3);
     for (let i = 0; i < n; i++) {
       const f = list[i];
@@ -1214,7 +1218,7 @@ export class View {
   }
 
   initParticles() {
-    const PMAX = (this.PMAX = this.isMobileLike ? 450 : 900);
+    const PMAX = (this.PMAX = this.isMobileLike ? 300 : 900);
     this.pPos = new Float32Array(PMAX * 3);
     this.pCol = new Float32Array(PMAX * 3);
     this.pBase = new Float32Array(PMAX * 3);
@@ -1387,8 +1391,8 @@ export class View {
   render(dt, time) {
     this.sway.value = time;
     this.pollen.rotation.y = time * 0.006;
-    this.foodFlip = !this.foodFlip;
-    if (this.foodFlip) this.updateFood(time);
+    this.frameCount = (this.frameCount || 0) + 1;
+    if (this.frameCount % 4 === 0) this.updateFood(time);   /* idle prey: 15Hz is plenty */
     this.updateParticles(dt);
 
     /* sun follows the action so shadows stay crisp near the player */
@@ -1410,15 +1414,22 @@ export class View {
     this.renderer.render(this.scene, this.camera);
     this.frameAvg = this.frameAvg * 0.95 + Math.min(dt, 0.1) * 1000 * 0.05;
     const ms = performance.now();
-    if (!navigator.webdriver && ms - this.lastAdjust > 1500 && this.frameAvg > 1) {
+    if (!navigator.webdriver && ms - this.lastAdjust > 900 && this.frameAvg > 1) {
       this.lastAdjust = ms;
       const fps = 1000 / this.frameAvg;
       if (fps < 45 && this.resScale > 0.5) {
-        this.resScale = Math.max(0.5, this.resScale - 0.2);
+        this.resScale = Math.max(0.5, this.resScale - 0.25);
         this.onResize();
       } else if (fps > 56 && this.resScale < 1) {
         this.resScale = Math.min(1, this.resScale + 0.1);
         this.onResize();
+      }
+      if (fps < 40 && this.sun.shadow.mapSize.width > 1024) {
+        this.sun.shadow.mapSize.set(1024, 1024);
+        if (this.sun.shadow.map) {
+          this.sun.shadow.map.dispose();
+          this.sun.shadow.map = null;
+        }
       }
     }
   }
