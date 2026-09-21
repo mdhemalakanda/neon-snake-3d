@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#040713">
+<title>Neon Snake 3D</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='6' fill='%23040713'/%3E%3Crect x='9' y='9' width='7' height='7' rx='2' fill='%2319e6ff'/%3E%3Crect x='16' y='16' width='7' height='7' rx='2' fill='%23ff2e7e'/%3E%3C/svg%3E">
+<!-- Loaded async so an offline/blocked network never delays the game; CSS has a full fallback stack -->
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/examples/jsm/": "./vendor/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="fx"></div>
+
+<div id="hud">
+  <div class="stat"><span class="label">SCORE</span><span class="value" id="score">0</span></div>
+  <div class="stat right"><span class="label">BEST</span><span class="value" id="best">0</span></div>
+</div>
+
+<div id="popups"></div>
+
+<button id="mute-btn" title="Sound on/off (M)" aria-label="Toggle sound">&#128266;</button>
+
+<div id="overlay" class="show">
+  <div class="panel" id="panel-menu">
+    <h1>NEON<br><span class="accent">SNAKE</span></h1>
+    <p class="sub">three.js arcade &middot; fully 3d</p>
+    <div class="keys">
+      <div><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> &mdash; steer</div>
+      <div><kbd>SPACE</kbd> start &middot; <kbd>P</kbd> pause &middot; <kbd>M</kbd> sound</div>
+      <div class="touch-hint">on touch: swipe to steer &middot; tap to start</div>
+    </div>
+    <button class="cta" id="btn-play">PLAY</button>
+  </div>
+
+  <div class="panel hidden" id="panel-over">
+    <h2>GAME OVER</h2>
+    <div id="new-best" class="badge">NEW BEST!</div>
+    <div class="finals">
+      <div class="stat"><span class="label">SCORE</span><span class="value" id="final-score">0</span></div>
+      <div class="stat"><span class="label">BEST</span><span class="value" id="final-best">0</span></div>
+    </div>
+    <button class="cta pink" id="btn-again">PLAY AGAIN</button>
+  </div>
+
+  <div class="panel hidden" id="panel-pause">
+    <h2>PAUSED</h2>
+    <p class="sub">press <kbd>P</kbd> or tap to resume</p>
+  </div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
