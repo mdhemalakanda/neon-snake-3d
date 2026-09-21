@@ -1,5 +1,5 @@
 /* main.js — game flow, input, network glue, HUD, self-test hooks. */
-import { CFG, World, makeSnake, seedTrail, stepKinematics, sampleBody, segCount, radiusOf, hueOf } from './game.js';
+import { CFG, World, makeSnake, seedTrail, stepKinematics, sampleBody, segCount, radiusOf, SPECIES } from './game.js';
 import { View } from './view.js';
 import { Net, makeRoomCode } from './net.js';
 
@@ -17,6 +17,7 @@ const el = {
   btnAgain: $('btn-again'), btnMenu: $('btn-menu'), btnCopy: $('btn-copy'),
   roomChip: $('room-chip'), roomCode: $('room-code'),
   toast: $('toast'), muteBtn: $('mute-btn'), netStatus: $('net-status'), endBtn: $('end-btn'), minimap: $('minimap'),
+  skinColors: $('skin-colors'), skinStyles: $('skin-styles'), skinPreview: $('skin-preview'), speciesName: $('species-name'),
   newBest: $('new-best'), finalScore: $('final-score'), finalBest: $('final-best'), overLb: $('over-lb'),
 };
 
@@ -40,8 +41,8 @@ function toast(msg, ms = 2600) {
   toastTimer = setTimeout(() => el.toast.classList.add('hidden'), ms);
 }
 function netStatus(msg) { el.netStatus.textContent = msg; }
-function loadBest() { try { return Number(localStorage.getItem('neon-snake-online-best')) || 0; } catch { return 0; } }
-function saveBest(v) { try { localStorage.setItem('neon-snake-online-best', String(v)); } catch { /* private mode */ } }
+function loadBest() { try { return Number(localStorage.getItem('jungle-snake-best') ?? localStorage.getItem('neon-snake-online-best')) || 0; } catch { return 0; } }
+function saveBest(v) { try { localStorage.setItem('jungle-snake-best', String(v)); } catch { /* private mode */ } }
 
 /* ---------- audio ---------- */
 class SFX {
@@ -176,6 +177,7 @@ const S = {
   acc: 0, sendT: 0, hudT: 0, mapT: 0, lastBoost: null,
   lastOwnScore: 0,
   best: loadBest(),
+  skin: { sp: 0, v: 0 },
   camHead: { x: 0, z: 0, th: 0.5 },
   hostTries: 0,
 };
@@ -190,14 +192,14 @@ function ensureView() {
 
 function addBots(n) {
   const names = [...CFG.BOT_NAMES].sort(() => Math.random() - 0.5);
-  for (let i = 0; i < n; i++) S.world.addSnake('bot-' + i + '-' + ((Math.random() * 999) | 0), names[i % names.length], true);
+  for (let i = 0; i < n; i++) S.world.addSnake('bot-' + i + '-' + ((Math.random() * 999) | 0), names[i % names.length], true, { sp: (Math.random() * SPECIES.length) | 0, v: (Math.random() * 4) | 0 });
 }
 
 function startSoloFlow() {
   cleanupNet();
   S.mode = 'solo'; S.ownId = 'me'; S.room = '';
   S.world = new World();
-  S.own = S.world.addSnake('me', S.name);
+  S.own = S.world.addSnake('me', S.name, false, S.skin);
   addBots(CFG.BOT_COUNT_SOLO);
   S.foods = S.world.food;
   el.roomChip.classList.add('hidden');
@@ -213,7 +215,7 @@ function startHostFlow(code) {
     onOpen: () => {
       S.room = code;
       S.world = new World();
-      S.own = S.world.addSnake('host', S.name);
+      S.own = S.world.addSnake('host', S.name, false, S.skin);
       addBots(CFG.BOT_COUNT_ROOM);
       S.foods = S.world.food;
       el.roomCode.textContent = code;
@@ -251,7 +253,7 @@ function startJoinFlow(code) {
     }
   }, 12000);
   S.net.join(code, {
-    onOpen: (conn) => conn.send({ t: 'hi', n: S.name }),
+    onOpen: (conn) => conn.send({ t: 'hi', n: S.name, sk: [S.skin.sp | 0, S.skin.v | 0] }),
     onData: (m) => handleHostMsg(m, () => { welcomed = true; }),
     onHostLost: () => {
       if (S.screen !== 'menu') { toast('HOST LEFT THE ARENA'); backToMenu(); }
@@ -323,7 +325,7 @@ function handleClientMsg(conn, m) {
   if (!S.world) return;
   if (m.t === 'hi') {
     let s = S.world.get(conn.peer);
-    if (!s) s = S.world.addSnake(conn.peer, m.n);
+    if (!s) s = S.world.addSnake(conn.peer, m.n, false, m.sk ? { sp: (m.sk[0] | 0) % SPECIES.length, v: (m.sk[1] | 0) & 3 } : undefined);
     else if (s.dead) S.world.respawn(conn.peer);
     conn.send({ t: 'welcome', id: conn.peer, x: s.x, z: s.z, a: s.a, food: S.world.foodList() });
   } else if (m.t === 'i') {
@@ -372,7 +374,7 @@ function applySnapshot(m) {
         S.own.mass = e.m;
         S.own.score = e.sc;
         S.own.boost = !!e.b;
-        const k = 0.12;
+        const k = 0.2;
         S.own.x += (e.x - S.own.x) * k;
         S.own.z += (e.z - S.own.z) * k;
         if (grew) { sfx.eat(); S.lastOwnScore = e.sc; }
@@ -389,13 +391,14 @@ function applySnapshot(m) {
     r.sa = e.a; r.targetA = e.a;
     r.sm = e.m; r.ssc = e.sc;
     r.boost = !!e.b;
+    if (e.sk) r.skin = { sp: (e.sk[0] | 0) % SPECIES.length, v: (e.sk[1] | 0) & 3 };
     r.sx = e.x; r.sz = e.z;
     r.snapT = S.time;
     seen.add(e.id);
   }
   for (const [id, r] of S.remotes) {
     if (!seen.has(id)) {
-      for (let i = 0; i < 14; i++) S.view.burst(r.x, 0.5, r.z, 0x19c8ff, 6, 3.5);
+      for (let i = 0; i < 14; i++) S.view.burst(r.x, 0.5, r.z, 0x5a6b38, 6, 3.5);
       S.remotes.delete(id);
     }
   }
@@ -406,7 +409,7 @@ function applySnapshot(m) {
   for (const id of m.ea) {
     const f = S.foods.get(id);
     if (f) {
-      if (S.own && Math.hypot(f.x - S.own.x, f.z - S.own.z) < 30) S.view.burst(f.x, 0.5, f.z, 0xff2e7e, 8, 3);
+      if (S.own && Math.hypot(f.x - S.own.x, f.z - S.own.z) < 30) S.view.burst(f.x, 0.5, f.z, 0xcfe0a8, 8, 3);
       S.foods.delete(id);
     }
   }
@@ -426,7 +429,7 @@ function gameOver(score, lbList) {
   sfx.die();
   const pts = S.own ? sampleBody(S.own) : [];
   for (let i = 0; i < pts.length; i += 4) {
-    S.view.burst(pts[i].x, 0.5, pts[i].z, i === 0 ? 0xffffff : 0x19c8ff, i === 0 ? 42 : 7, 4);
+    S.view.burst(pts[i].x, 0.5, pts[i].z, i === 0 ? 0xd8cfa0 : 0x5a6b38, i === 0 ? 42 : 7, 4);
   }
   const isBest = score > S.best;
   if (isBest) { S.best = score; saveBest(S.best); }
@@ -573,7 +576,7 @@ el.muteBtn.addEventListener('click', toggleMute);
 function readName() {
   const n = (el.nameInput.value || '').trim().toUpperCase().slice(0, 12);
   S.name = n || 'SNAKE' + ((Math.random() * 90 + 10) | 0);
-  try { localStorage.setItem('neon-snake-name', S.name); } catch { /* ignore */ }
+  try { localStorage.setItem('jungle-snake-name', S.name); } catch { /* ignore */ }
 }
 function startFromMenu(kind) {
   readName();
@@ -600,6 +603,104 @@ el.btnCopy.addEventListener('click', () => {
   } else toast('SHARE THIS URL: ' + link, 5000);
 });
 
+/* ---------- species picker ---------- */
+function saveSkin() { try { localStorage.setItem('jungle-snake-skin', JSON.stringify(S.skin)); } catch { /* private mode */ } }
+
+function drawSpeciesChip(cv, sp) {
+  const ctx = cv.getContext('2d');
+  const w = cv.width, h = cv.height;
+  ctx.fillStyle = sp.base;
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = sp.belly;
+  ctx.fillRect(0, h * 0.8, w, h * 0.2);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = sp.dark;
+  if (sp.pattern === 'bands') {
+    for (let x = 2; x < w; x += 9) ctx.fillRect(x, 0, 3.5, h * 0.78);
+  } else if (sp.pattern === 'zigzag') {
+    ctx.strokeStyle = sp.light;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let x = 0; x <= w; x += 4) {
+      const y = h * 0.4 + (((x / 4) & 1) ? 3.5 : -3.5);
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  } else if (sp.pattern === 'retic') {
+    ctx.strokeStyle = hexFor(sp.dark);
+    ctx.lineWidth = 1.5;
+    for (let x = 0; x < w; x += 7) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + 4, h * 0.4);
+      ctx.lineTo(x, h * 0.78);
+      ctx.stroke();
+    }
+  } else {
+    for (let x = 4; x < w; x += 10) {
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(x, h * 0.38, 3.2, h * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+function hexFor(css) { return css; }
+
+function refreshSkinPicker() {
+  [...el.skinColors.children].forEach((b, i) => b.classList.toggle('sel', i === (S.skin.sp | 0)));
+  el.speciesName.textContent = SPECIES[(S.skin.sp | 0) % SPECIES.length].name;
+  const vb = document.getElementById('variant-btn');
+  if (vb) vb.textContent = 'PATTERN ' + (((S.skin.v | 0) & 3) + 1) + ' / 4';
+  const cv = el.skinPreview;
+  const ctx = cv.getContext('2d');
+  const sp = SPECIES[(S.skin.sp | 0) % SPECIES.length];
+  const w = cv.width, h = cv.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = sp.base;
+  ctx.lineWidth = h * 0.62;
+  ctx.beginPath();
+  for (let x = 0; x <= w; x += 4) {
+    const y = h / 2 + Math.sin(x * 0.05) * h * 0.22;
+    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = sp.dark;
+  ctx.globalAlpha = 0.85;
+  for (let x = 5; x < w; x += 14) {
+    const y = h / 2 + Math.sin(x * 0.05) * h * 0.22;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 4, h * 0.24, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function buildSkinPicker() {
+  el.skinColors.innerHTML = '';
+  SPECIES.forEach((sp, i) => {
+    const b = document.createElement('button');
+    b.className = 'swatch species';
+    b.title = sp.name;
+    const cv = document.createElement('canvas');
+    cv.width = 34; cv.height = 20;
+    drawSpeciesChip(cv, sp);
+    b.appendChild(cv);
+    b.addEventListener('click', () => { sfx.init(); S.skin.sp = i; saveSkin(); refreshSkinPicker(); sfx.eat(); });
+    el.skinColors.appendChild(b);
+  });
+  el.skinStyles.innerHTML = '';
+  const vb = document.createElement('button');
+  vb.className = 'stylebtn';
+  vb.id = 'variant-btn';
+  vb.title = 'Cycle pattern variant';
+  vb.addEventListener('click', () => { sfx.init(); S.skin.v = ((S.skin.v | 0) + 1) & 3; saveSkin(); refreshSkinPicker(); });
+  el.skinStyles.appendChild(vb);
+  refreshSkinPicker();
+}
+
 /* ---------- minimap ---------- */
 function drawMinimap(list) {
   const cv = el.minimap;
@@ -610,17 +711,17 @@ function drawMinimap(list) {
   ctx.clearRect(0, 0, w, w);
   ctx.beginPath();
   ctx.arc(c, c, w / 2 - 2, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(6, 12, 26, 0.72)';
+  ctx.fillStyle = 'rgba(16, 22, 12, 0.74)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(25, 230, 255, 0.45)';
+  ctx.strokeStyle = 'rgba(160, 190, 110, 0.5)';
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.fillStyle = 'rgba(130, 220, 255, 0.45)';
+  ctx.fillStyle = 'rgba(196, 206, 128, 0.5)';
   for (const f of S.foods.values()) {
     ctx.fillRect(c + f.x * scale - 0.6, c + f.z * scale - 0.6, 1.2, 1.2);
   }
   for (const item of list) {
-    const hue = hueOf(item.id);
+    const spCol = '#' + SPECIES[((item.skin ? item.skin.sp : 0) | 0) % SPECIES.length].ui.toString(16).padStart(6, '0');
     const isMe = item.id === S.ownId;
     if (isMe && item.pts.length > 1) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
@@ -632,12 +733,12 @@ function drawMinimap(list) {
       }
       ctx.stroke();
     }
-    ctx.fillStyle = isMe ? '#eafcff' : `hsl(${(hue * 360) | 0}, 90%, 65%)`;
+    ctx.fillStyle = isMe ? '#f2eee0' : spCol;
     ctx.beginPath();
     ctx.arc(c + item.pts[0].x * scale, c + item.pts[0].z * scale, isMe ? 3 : Math.min(3.2, 1.8 + item.thickness), 0, Math.PI * 2);
     ctx.fill();
     if (isMe) {
-      ctx.strokeStyle = 'rgba(25, 230, 255, 0.9)';
+      ctx.strokeStyle = 'rgba(226, 218, 180, 0.9)';
       ctx.lineWidth = 1;
       ctx.stroke();
     }
@@ -651,6 +752,7 @@ function loop(now) {
   const dt = Math.min((now - lastT) / 1000, 0.1);
   lastT = now;
   S.time = now / 1000;
+  if (S.view) S.view.menuMode = S.screen === 'menu';
 
   if (S.screen !== 'menu') tick(dt);
   if (S.view) S.view.render(dt, S.time);
@@ -681,7 +783,7 @@ function tick(dt) {
     }
     S.sendT -= dt;
     if (S.sendT <= 0) {
-      S.sendT = 0.066;
+      S.sendT = 0.06;
       S.net && S.net.sendToHost({ t: 'i', a: S.input.a, b: boost ? 1 : 0 });
     }
   } else if (S.world) {
@@ -696,12 +798,12 @@ function tick(dt) {
     if (S.own && S.own.score > S.lastOwnScore) {
       sfx.eat();
       const h = S.own;
-      S.view.burst(h.x + Math.cos(h.a) * 1.2, 0.5, h.z + Math.sin(h.a) * 1.2, 0xff2e7e, 10, 3.5);
+      S.view.burst(h.x + Math.cos(h.a) * 1.2, 0.5, h.z + Math.sin(h.a) * 1.2, 0xcfe0a8, 10, 3.5);
       S.lastOwnScore = S.own.score;
     }
     S.sendT -= dt;
     if (S.mode === 'host' && S.sendT <= 0) {
-      S.sendT = 0.08;
+      S.sendT = 0.07;
       const snap = S.world.snapshot();
       for (const d of snap.de) {
         if (d.id === S.ownId) gameOver(d.score, snap.lb);
@@ -720,14 +822,14 @@ function tick(dt) {
   const list = [];
   if (S.mode === 'client') {
     if (S.own && !S.own.dead) {
-      list.push({ id: S.ownId, name: S.name, pts: sampleBody(S.own), thickness: radiusOf(S.own.mass), angle: S.own.a, showName: false });
+      list.push({ id: S.ownId, name: S.name, pts: sampleBody(S.own), thickness: radiusOf(S.own.mass), angle: S.own.a, showName: false, skin: S.skin });
     }
     for (const r of S.remotes.values()) {
-      list.push({ id: r.id, name: r.name, pts: sampleBody(r), thickness: radiusOf(r.mass), angle: r.a, showName: true });
+      list.push({ id: r.id, name: r.name, pts: sampleBody(r), thickness: radiusOf(r.mass), angle: r.a, showName: true, skin: r.skin });
     }
   } else if (S.world) {
     for (const s of S.world.alive()) {
-      list.push({ id: s.id, name: s.name, pts: s.body.length ? s.body : sampleBody(s), thickness: radiusOf(s.mass), angle: s.a, showName: s.id !== S.ownId });
+      list.push({ id: s.id, name: s.name, pts: s.body.length ? s.body : sampleBody(s), thickness: radiusOf(s.mass), angle: s.a, showName: s.id !== S.ownId, skin: s.skin });
     }
   }
   S.view.updateSnakes(list, S.time);
@@ -744,6 +846,7 @@ function tick(dt) {
     S.camHead.x = S.own.x;
     S.camHead.z = S.own.z;
     S.camHead.th = radiusOf(S.own.mass);
+    S.camHead.a = S.own.a;
   }
   S.view.follow(S.camHead, S.camHead.th, ownAlive && boostNow(), dt);
 
@@ -793,6 +896,7 @@ if (params.get('autopilot') === 'eat') {
   }
 } else if (params.get('autopilot') === 'live') {
   S.name = (params.get('name') || 'PILOT').toUpperCase();
+  if (params.get('sp')) S.skin = { sp: parseInt(params.get('sp'), 10) % SPECIES.length, v: parseInt(params.get('v') || '0', 10) & 3 };
   setTimeout(() => {
     startSoloFlow();
     const bot = [...S.world.snakes.values()].find((s) => s.bot);
@@ -825,8 +929,13 @@ if (params.get('nettest') === 'host') {
 }
 
 /* ---------- boot ---------- */
-try { S.name = localStorage.getItem('neon-snake-name') || ''; } catch { /* ignore */ }
+try { S.name = localStorage.getItem('jungle-snake-name') || localStorage.getItem('neon-snake-name') || ''; } catch { /* ignore */ }
+try {
+  const savedSkin = JSON.parse(localStorage.getItem('jungle-snake-skin') || 'null');
+  if (savedSkin && Number.isInteger(savedSkin.sp) && savedSkin.sp >= 0 && savedSkin.sp < SPECIES.length) S.skin = { sp: savedSkin.sp, v: (savedSkin.v | 0) & 3 };
+} catch { /* ignore */ }
 el.nameInput.value = S.name;
+buildSkinPicker();
 const roomParam = params.get('room');
 if (roomParam) el.codeInput.value = roomParam.toUpperCase();
 ensureView();

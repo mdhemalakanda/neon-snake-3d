@@ -25,6 +25,28 @@ export const CFG = {
 export const segCount = (mass) => Math.min(CFG.MAX_SEGS, 6 + Math.floor(mass * 0.55));
 export const radiusOf = (mass) => 0.42 + Math.min(0.85, Math.sqrt(mass) * 0.028);
 
+/* Real snake species. width = visual thickness multiplier (gameplay unchanged),
+   head picks a head-shape rig, pattern drives the generated scale texture. */
+export const SPECIES = [
+  { name: 'KING COBRA',       base: '#5f5322', dark: '#38300f', light: '#cfc08a', belly: '#d6cda2', pattern: 'bands',   width: 0.95, head: 'cobra',  rough: 0.5,  ui: 0x9a8a4a },
+  { name: 'RETICULATED PYTHON', base: '#a8935a', dark: '#3d3218', light: '#d8c690', belly: '#e0d5ac', pattern: 'retic', width: 1.08, head: 'broad',  rough: 0.48, ui: 0xb09b5e },
+  { name: 'GREEN ANACONDA',   base: '#46582f', dark: '#1f2a14', light: '#6b7d3f', belly: '#cfc79a', pattern: 'blotches', width: 1.32, head: 'broad', rough: 0.55, ui: 0x5a7038 },
+  { name: 'BOA CONSTRICTOR',  base: '#8a6f4d', dark: '#46372a', light: '#b39a72', belly: '#d8ccae', pattern: 'saddles', width: 1.12, head: 'normal', rough: 0.55, ui: 0x9a7d58 },
+  { name: 'GREEN TREE SNAKE', base: '#4e8a35', dark: '#2c551d', light: '#7fb558', belly: '#d5e3a0', pattern: 'solid',   width: 0.78, head: 'slim',   rough: 0.45, ui: 0x63a545 },
+  { name: 'SAND VIPER',       base: '#8a7a5f', dark: '#544636', light: '#cbbd9a', belly: '#d9d0b2', pattern: 'zigzag',  width: 0.9,  head: 'viper',  rough: 0.6,  ui: 0xa08f6d },
+  { name: 'BLACK MAMBA',      base: '#3a4042', dark: '#23282a', light: '#5c666a', belly: '#9aa0a0', pattern: 'solid',   width: 0.92, head: 'mamba',  rough: 0.3,  ui: 0x6a7478 },
+  { name: 'CORN SNAKE',       base: '#b5703a', dark: '#7a2f20', light: '#e09a5a', belly: '#e8d8b0', pattern: 'blotches', width: 0.85, head: 'normal', rough: 0.5, ui: 0xc07a42 },
+];
+
+function strHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h;
+}
+export function speciesFor(id) {
+  return strHash(String(id)) % SPECIES.length;
+}
+
 export function mulberry32(seed) {
   let a = seed | 0;
   return function () {
@@ -69,6 +91,7 @@ export function makeSnake(id, name, x, z, a) {
     wpx: 0, wpz: 0, wpt: 0,
     trail: [], trailD: [], trailDist: 0,
     body: [],
+    skin: { sp: speciesFor(id), v: (strHash(String(id)) >>> 3) & 3 },
   };
   seedTrail(s);
   return s;
@@ -150,11 +173,12 @@ export class World {
     return id;
   }
 
-  addSnake(id, name, bot = false) {
+  addSnake(id, name, bot = false, skin = null) {
     const a = this.rng() * Math.PI * 2;
     const r = this.rng() * CFG.R * 0.35;
     const s = makeSnake(id, name, Math.cos(a) * r, Math.sin(a) * r, a);
     s.bot = bot;
+    if (skin && typeof skin.sp === 'number') s.skin = { sp: skin.sp | 0, v: (skin.v | 0) & 3 };
     this.snakes.set(id, s);
     return s;
   }
@@ -221,9 +245,9 @@ export class World {
         if (o === s || o.dead) continue;
         const ro = radiusOf(o.mass);
         const hdx = o.x - s.x, hdz = o.z - s.z;
-        const hh = (rr + ro) * 0.9;
+        const hh = (rr + ro) * 0.8;
         if (hdx * hdx + hdz * hdz < hh * hh) { this.kill(s); this.kill(o); break; }
-        const lim = rr * 0.9 + ro * 0.85;
+        const lim = rr * 0.8 + ro * 0.78;
         const lim2 = lim * lim;
         let hit = false;
         const b = o.body;
@@ -291,6 +315,7 @@ export class World {
         x: +s.x.toFixed(2), z: +s.z.toFixed(2),
         a: +s.a.toFixed(3), m: +s.mass.toFixed(1),
         sc: s.score | 0, b: s.boost ? 1 : 0,
+        sk: [(s.skin ? s.skin.sp : 0) | 0, (s.skin ? s.skin.v : 0) | 0],
       });
     }
     const ev = this.takeEvents();

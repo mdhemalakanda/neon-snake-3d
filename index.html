@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<meta name="theme-color" content="#040713">
-<title>Neon Snake Online</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='6' fill='%23040713'/%3E%3Ccircle cx='12' cy='12' r='4' fill='%2319e6ff'/%3E%3Ccircle cx='21' cy='20' r='4' fill='%23ff2e7e'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#141a10">
+<title>Jungle Serpent — Online Snake</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e2a16'/%3E%3Cpath d='M8 24 C 8 17, 17 20, 17 13 C 17 8.5, 11 9, 11 13' stroke='%237fae4e' stroke-width='3.2' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='11' cy='12' r='1.4' fill='%23ece7d2'/%3E%3C/svg%3E">
 <!-- Loaded async so an offline/blocked network never delays the game; CSS has a full fallback stack -->
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link href="https://fonts.googleapis.com/css2?family=Averia+Serif+Libre:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="./style.css">
 <script type="importmap">
 {
@@ -50,22 +50,26 @@
 
 <div id="overlay" class="show">
   <div class="panel" id="panel-menu">
-    <h1>NEON<br><span class="accent">SNAKE</span></h1>
-    <p class="sub">online multiplayer &middot; giant arena</p>
+    <h1>JUNGLE<br><span class="accent">SERPENT</span></h1>
+    <p class="sub">online multiplayer &middot; rainforest arena</p>
     <input id="name-input" class="field" maxlength="12" placeholder="your snake name" autocomplete="off" spellcheck="false">
+    <div class="skinrow" id="skin-colors"></div>
+    <div class="skinrow" id="skin-styles"></div>
+    <div id="species-name" class="speciesname"></div>
+    <canvas id="skin-preview" width="240" height="22"></canvas>
     <div class="btnrow">
       <button class="cta" id="btn-solo">PLAY SOLO</button>
-      <button class="cta pink" id="btn-host">CREATE ROOM</button>
+      <button class="cta warm" id="btn-host">CREATE ROOM</button>
     </div>
     <div class="btnrow">
       <input id="code-input" class="field code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
-      <button class="cta pink" id="btn-join">JOIN</button>
+      <button class="cta warm" id="btn-join">JOIN</button>
     </div>
     <div id="net-status" class="netstatus"></div>
     <div class="keys">
       <div>steer with mouse or arrows / WASD &middot; boost with SPACE or hold click &middot; wheel to zoom</div>
       <div>touch: drag anywhere to steer &middot; pinch to zoom &middot; second finger to boost</div>
-      <div>eat orbs to grow &middot; dodge other snakes &middot; the wall bites</div>
+      <div>hunt prey to grow &middot; dodge other snakes &middot; the thicket bites</div>
     </div>
   </div>
 

@@ -1,14 +1,14 @@
-# Neon Snake Online
+# Jungle Serpent Online
 
-A neon slither-style snake game built with Three.js (WebGL) and peer-to-peer
-WebRTC multiplayer. Fully static: no build step, no backend server of your own,
-no CDN calls at runtime.
+A realistic-jungle slither-style snake game built with Three.js (WebGL) and
+peer-to-peer WebRTC multiplayer. Fully static: no build step, no backend
+server of your own, no CDN calls at runtime.
 
 **Play online: https://mdhemalakanda.github.io/neon-snake-3d/**
 
 ## How it works
 
-- **PLAY SOLO** — huge circular arena (radius 250) with 5 AI snakes.
+- **PLAY SOLO** — huge circular rainforest arena (radius 250) with 5 AI snakes.
 - **CREATE ROOM** — starts a game and gives you a 4-letter room code. Share the
   invite link (button in-game) or just the code.
 - **JOIN** — enter a friend's code to play in their arena.
@@ -29,10 +29,25 @@ streams state to everyone else, so:
 | Boost | Hold SPACE, hold mouse button, or second finger (costs length) |
 | Sound | M or the speaker button |
 
-Eat glowing orbs to grow longer and score points (+1 to +3). Dead snakes turn
-into food. Avoid other snakes' bodies and the arena wall — only your head is
-vulnerable. The leaderboard tracks the top 8 snakes in real time, and your
-best solo score is saved locally. Every snake wears its player's name.
+Hunt prey — beetles, frogs and rodents — to grow longer and score points.
+Dead snakes turn into prey. Avoid other snakes' bodies and the arena wall —
+only your head is vulnerable. The leaderboard tracks the top 8 snakes in real
+time, and your best solo score is saved locally. Every snake wears its
+player's name.
+
+## The jungle
+
+- **8 real snake species** — King Cobra (with hood), Reticulated Python, Green
+  Anaconda, Boa Constrictor, Green Tree Snake, Sand Viper, Black Mamba and
+  Corn Snake. Each has its own procedurally painted scale texture, pattern
+  (bands, reticulated net, blotches, saddles, zigzag), belly colour, head
+  shape (hooded, broad, slender, viper-wide, coffin), eye colour and body
+  thickness. Pick yours in the menu; four pattern variants per species.
+- **Living forest floor** — procedurally painted soil with leaf litter, moss
+  and dappled canopy shade; ~3800 wind-swayed grass tufts, bushes, ferns,
+  rocks, fallen logs and leaves, plus a tree ring and fog-shrouded giants
+  beyond the arena edge. Warm sunlight with real-time shadows and drifting
+  pollen. No grid anywhere.
 
 ## Run locally
 
@@ -47,7 +62,8 @@ python3 -m http.server 8137
 
 - `?autopilot=eat` — synchronously drives the simulation (eat, grow, wall death)
   and writes the result to the document's `data-autopilot` attribute.
-- `?autopilot=live` — starts a solo game immediately (screenshots).
+- `?autopilot=live` — starts a solo game immediately (`&sp=N` picks a species;
+  screenshots).
 - `?nettest=host&room=CODE` / `?nettest=join&room=CODE` — headless multiplayer
   smoke test; reports into `data-net`.
 
