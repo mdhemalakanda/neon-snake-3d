@@ -82,6 +82,19 @@ body {
   color: #ffd7e6; font-size: 12px; letter-spacing: 2px;
 }
 
+/* minimap */
+#minimap {
+  position: fixed; left: 16px; bottom: 16px; z-index: 4;
+  width: 150px; height: 150px; pointer-events: none;
+  border-radius: 50%;
+  box-shadow: 0 0 18px rgba(25, 230, 255, 0.18);
+}
+#room-chip { left: 182px; }
+@media (max-width: 560px) {
+  #minimap { width: 104px; height: 104px; left: 12px; bottom: 12px; }
+  #room-chip { left: 12px; bottom: 132px; }
+}
+
 /* end game button */
 #end-btn {
   position: fixed; top: 14px; left: 50%; transform: translateX(-50%);

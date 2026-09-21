@@ -5,7 +5,7 @@ export const CFG = {
   R: 250,                 // arena radius (world units)
   TICK: 1 / 60,           // fixed simulation step
   SPEED: 9,               // base speed (units/s)
-  BOOST: 16,              // boosting speed
+  BOOST: 17,              // boosting speed
   TURN: 3.0,              // turn rate (rad/s)
   TURN_BOOST: 2.3,
   START_MASS: 10,
@@ -16,7 +16,7 @@ export const CFG = {
   FOOD_MAX: 520,
   BOOST_DRAIN: 2.4,       // mass lost per second while boosting
   BOOST_DROP_T: 0.4,      // pellet drop interval while boosting
-  MIN_BOOST_MASS: 14,
+  MIN_BOOST_MASS: 9,
   BOT_COUNT_SOLO: 5,
   BOT_COUNT_ROOM: 3,
   BOT_NAMES: ['KAA', 'MAMBA', 'KRAIT', 'COILZ', 'HISSA', 'SLINK', 'VYPE', 'NAGA', 'SNEK', 'BOA'],
@@ -183,7 +183,7 @@ export class World {
     const s = this.snakes.get(id);
     if (!s || s.dead) return;
     s.targetA = a;
-    s.boost = !!boost && s.mass > CFG.MIN_BOOST_MASS;
+    s.boost = !!boost && s.mass >= CFG.MIN_BOOST_MASS;
   }
 
   foodTarget() {

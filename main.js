@@ -16,16 +16,22 @@ const el = {
   btnSolo: $('btn-solo'), btnHost: $('btn-host'), btnJoin: $('btn-join'),
   btnAgain: $('btn-again'), btnMenu: $('btn-menu'), btnCopy: $('btn-copy'),
   roomChip: $('room-chip'), roomCode: $('room-code'),
-  toast: $('toast'), muteBtn: $('mute-btn'), netStatus: $('net-status'), endBtn: $('end-btn'),
+  toast: $('toast'), muteBtn: $('mute-btn'), netStatus: $('net-status'), endBtn: $('end-btn'), minimap: $('minimap'),
   newBest: $('new-best'), finalScore: $('final-score'), finalBest: $('final-best'), overLb: $('over-lb'),
 };
 
 function showPanel(name) {
-  el.overlay.classList.add('show');
+  el.overlay.style.display = '';
+  requestAnimationFrame(() => el.overlay.classList.add('show'));
   for (const p of [el.panelMenu, el.panelOver, el.panelWait]) p.classList.add('hidden');
   ({ menu: el.panelMenu, over: el.panelOver, wait: el.panelWait })[name].classList.remove('hidden');
 }
-function hideOverlay() { el.overlay.classList.remove('show'); }
+function hideOverlay() {
+  el.overlay.classList.remove('show');
+  setTimeout(() => {
+    if (!el.overlay.classList.contains('show')) el.overlay.style.display = 'none';
+  }, 400);
+}
 let toastTimer = null;
 function toast(msg, ms = 2600) {
   el.toast.textContent = msg;
@@ -86,7 +92,7 @@ const S = {
   lb: [],
   input: { a: -Math.PI / 2 },
   spaceHeld: false, mouseBoost: false, touchBoost: false,
-  acc: 0, sendT: 0, hudT: 0,
+  acc: 0, sendT: 0, hudT: 0, mapT: 0,
   lastOwnScore: 0,
   best: loadBest(),
   camHead: { x: 0, z: 0, th: 0.5 },
@@ -178,6 +184,7 @@ function beginPlay() {
   ensureView();
   S.screen = 'playing';
   el.endBtn.classList.remove('hidden');
+  el.minimap.classList.remove('hidden');
   S.acc = 0;
   S.lastOwnScore = S.own ? S.own.score : 0;
   hideOverlay();
@@ -204,6 +211,7 @@ function backToMenu() {
   cleanupNet();
   S.screen = 'menu';
   el.endBtn.classList.add('hidden');
+  el.minimap.classList.add('hidden');
   S.world = null;
   S.own = null;
   S.remotes.clear();
@@ -267,6 +275,7 @@ function handleHostMsg(m, markWelcomed) {
     S.lastOwnScore = 0;
     S.screen = 'playing';
     el.endBtn.classList.remove('hidden');
+  el.minimap.classList.remove('hidden');
     hideOverlay();
   }
 }
@@ -328,6 +337,7 @@ function gameOver(score, lbList) {
   if (S.screen === 'over') return;
   S.screen = 'over';
   el.endBtn.classList.add('hidden');
+  el.minimap.classList.add('hidden');
   if (S.own) S.own.dead = true;
   sfx.die();
   const pts = S.own ? sampleBody(S.own) : [];
@@ -363,6 +373,7 @@ function respawnMe() {
     S.lastOwnScore = 0;
     S.screen = 'playing';
     el.endBtn.classList.remove('hidden');
+  el.minimap.classList.remove('hidden');
     hideOverlay();
     sfx.start();
   }
@@ -484,6 +495,50 @@ el.btnCopy.addEventListener('click', () => {
   } else toast('SHARE THIS URL: ' + link, 5000);
 });
 
+/* ---------- minimap ---------- */
+function drawMinimap(list) {
+  const cv = el.minimap;
+  const ctx = S.mapCtx || (S.mapCtx = cv.getContext('2d'));
+  const w = cv.width;
+  const c = w / 2;
+  const scale = (w / 2 - 4) / CFG.R;
+  ctx.clearRect(0, 0, w, w);
+  ctx.beginPath();
+  ctx.arc(c, c, w / 2 - 2, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(6, 12, 26, 0.72)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(25, 230, 255, 0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(130, 220, 255, 0.45)';
+  for (const f of S.foods.values()) {
+    ctx.fillRect(c + f.x * scale - 0.6, c + f.z * scale - 0.6, 1.2, 1.2);
+  }
+  for (const item of list) {
+    const hue = hueOf(item.id);
+    const isMe = item.id === S.ownId;
+    if (isMe && item.pts.length > 1) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(c + item.pts[0].x * scale, c + item.pts[0].z * scale);
+      for (let i = 3; i < item.pts.length; i += 3) {
+        ctx.lineTo(c + item.pts[i].x * scale, c + item.pts[i].z * scale);
+      }
+      ctx.stroke();
+    }
+    ctx.fillStyle = isMe ? '#eafcff' : `hsl(${(hue * 360) | 0}, 90%, 65%)`;
+    ctx.beginPath();
+    ctx.arc(c + item.pts[0].x * scale, c + item.pts[0].z * scale, isMe ? 3 : Math.min(3.2, 1.8 + item.thickness), 0, Math.PI * 2);
+    ctx.fill();
+    if (isMe) {
+      ctx.strokeStyle = 'rgba(25, 230, 255, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+}
+
 /* ---------- main loop ---------- */
 let lastT = performance.now();
 function loop(now) {
@@ -503,7 +558,7 @@ function tick(dt) {
   if (S.mode === 'client') {
     if (S.own && !S.own.dead && playing) {
       S.own.targetA = S.input.a;
-      S.own.boost = boost && S.own.mass > CFG.MIN_BOOST_MASS;
+      S.own.boost = boost && S.own.mass >= CFG.MIN_BOOST_MASS;
       stepKinematics(S.own, dt);
     }
     for (const r of S.remotes.values()) {
@@ -567,6 +622,12 @@ function tick(dt) {
     }
   }
   S.view.updateSnakes(list, S.time);
+
+  S.mapT -= dt;
+  if (S.mapT <= 0) {
+    S.mapT = 0.09;
+    drawMinimap(list);
+  }
 
   /* camera */
   const ownAlive = S.own && !S.own.dead;

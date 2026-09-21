@@ -478,11 +478,6 @@ export class View {
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(head.x, 0.4, head.z);
     this.boostAmt += ((boosting ? 1 : 0) - this.boostAmt) * (1 - Math.exp(-4 * dt));
-    const targetFov = 52 + this.boostAmt * 8;
-    if (Math.abs(this.camera.fov - targetFov) > 0.05) {
-      this.camera.fov = targetFov;
-      this.camera.updateProjectionMatrix();
-    }
     this.groundUniforms.uCam.value.copy(this.camera.position);
   }
 
