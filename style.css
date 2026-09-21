@@ -193,6 +193,10 @@ h2 {
   background: rgba(22, 30, 15, 0.7); color: #d8e4c0;
 }
 .stylebtn:hover { border-color: rgba(160, 190, 110, 0.7); }
+.stylebtn.sel {
+  border-color: var(--moss); color: #e8f0d8;
+  background: rgba(143, 191, 90, 0.16);
+}
 #skin-preview {
   display: block; margin: 10px auto 0;
   border-radius: 999px; box-shadow: 0 2px 10px rgba(5, 8, 3, 0.5);
@@ -265,3 +269,38 @@ h2 {
 }
 
 .btnrow .field { margin: 0; }
+
+/* speed slider (top-left, under the score) */
+#speed-box {
+  position: fixed; top: 92px; left: 22px; z-index: 5;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: 12px;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#speed-box .label { letter-spacing: 3px; }
+#speed-slider {
+  width: 130px; height: 4px;
+  accent-color: var(--moss); cursor: pointer;
+}
+.sval {
+  font-size: 12px; font-weight: 700; color: #d8e4c0; min-width: 40px;
+  font-family: 'Trebuchet MS', Verdana, sans-serif;
+}
+
+/* pause button (sits left of the mute button) */
+#pause-btn {
+  position: fixed; right: 72px; bottom: 16px; z-index: 7;
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: #d8e4c0; font-size: 15px; cursor: pointer;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#pause-btn:hover { border-color: rgba(160, 190, 110, 0.75); }
+
+@media (max-width: 560px) {
+  #speed-box { top: 72px; left: 10px; padding: 6px 10px; }
+  #speed-slider { width: 104px; }
+}

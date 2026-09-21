@@ -18,6 +18,8 @@ const el = {
   roomChip: $('room-chip'), roomCode: $('room-code'),
   toast: $('toast'), muteBtn: $('mute-btn'), netStatus: $('net-status'), endBtn: $('end-btn'), minimap: $('minimap'),
   skinColors: $('skin-colors'), skinStyles: $('skin-styles'), skinPreview: $('skin-preview'), speciesName: $('species-name'),
+  sizeRow: $('size-row'), speedBox: $('speed-box'), speedSlider: $('speed-slider'), speedVal: $('speed-val'),
+  pauseBtn: $('pause-btn'), panelPause: $('panel-pause'), btnResume: $('btn-resume'),
   newBest: $('new-best'), finalScore: $('final-score'), finalBest: $('final-best'), overLb: $('over-lb'),
 };
 
@@ -25,7 +27,7 @@ function showPanel(name) {
   el.overlay.style.display = '';
   requestAnimationFrame(() => el.overlay.classList.add('show'));
   for (const p of [el.panelMenu, el.panelOver, el.panelWait]) p.classList.add('hidden');
-  ({ menu: el.panelMenu, over: el.panelOver, wait: el.panelWait })[name].classList.remove('hidden');
+  ({ menu: el.panelMenu, over: el.panelOver, wait: el.panelWait, pause: el.panelPause })[name].classList.remove('hidden');
 }
 function hideOverlay() {
   el.overlay.classList.remove('show');
@@ -178,6 +180,10 @@ const S = {
   lastOwnScore: 0,
   best: loadBest(),
   skin: { sp: 0, v: 0 },
+  speedMul: 1.3,
+  spawnMass: 16,
+  paused: false,
+  steerOrigin: null,
   camHead: { x: 0, z: 0, th: 0.5 },
   hostTries: 0,
 };
@@ -200,6 +206,8 @@ function startSoloFlow() {
   S.mode = 'solo'; S.ownId = 'me'; S.room = '';
   S.world = new World();
   S.own = S.world.addSnake('me', S.name, false, S.skin);
+  S.own.mass = S.spawnMass;
+  seedTrail(S.own);
   addBots(CFG.BOT_COUNT_SOLO);
   S.foods = S.world.food;
   el.roomChip.classList.add('hidden');
@@ -216,6 +224,8 @@ function startHostFlow(code) {
       S.room = code;
       S.world = new World();
       S.own = S.world.addSnake('host', S.name, false, S.skin);
+      S.own.mass = S.spawnMass;
+      seedTrail(S.own);
       addBots(CFG.BOT_COUNT_ROOM);
       S.foods = S.world.food;
       el.roomCode.textContent = code;
@@ -253,7 +263,7 @@ function startJoinFlow(code) {
     }
   }, 12000);
   S.net.join(code, {
-    onOpen: (conn) => conn.send({ t: 'hi', n: S.name, sk: [S.skin.sp | 0, S.skin.v | 0] }),
+    onOpen: (conn) => conn.send({ t: 'hi', n: S.name, sz: S.spawnMass, sk: [S.skin.sp | 0, S.skin.v | 0] }),
     onData: (m) => handleHostMsg(m, () => { welcomed = true; }),
     onHostLost: () => {
       if (S.screen !== 'menu') { toast('HOST LEFT THE ARENA'); backToMenu(); }
@@ -266,6 +276,11 @@ function startJoinFlow(code) {
 function beginPlay() {
   ensureView();
   S.screen = 'playing';
+  S.paused = false;
+  el.pauseBtn.textContent = '⏸';
+  el.speedBox.classList.toggle('hidden', S.mode === 'client');
+  el.pauseBtn.classList.toggle('hidden', S.mode !== 'solo');
+  if (S.world) S.world.speedMul = S.speedMul;
   el.endBtn.classList.remove('hidden');
   el.minimap.classList.remove('hidden');
   S.acc = 0;
@@ -294,8 +309,11 @@ function endGameNow() {
 function backToMenu() {
   cleanupNet();
   S.screen = 'menu';
+  S.paused = false;
   el.endBtn.classList.add('hidden');
   el.minimap.classList.add('hidden');
+  el.pauseBtn.classList.add('hidden');
+  el.speedBox.classList.add('hidden');
   S.world = null;
   S.own = null;
   S.remotes.clear();
@@ -327,6 +345,7 @@ function handleClientMsg(conn, m) {
     let s = S.world.get(conn.peer);
     if (!s) s = S.world.addSnake(conn.peer, m.n, false, m.sk ? { sp: (m.sk[0] | 0) % SPECIES.length, v: (m.sk[1] | 0) & 3 } : undefined);
     else if (s.dead) S.world.respawn(conn.peer);
+    if (m.sz) { s.mass = Math.max(10, Math.min(24, m.sz | 0)); seedTrail(s); }
     conn.send({ t: 'welcome', id: conn.peer, x: s.x, z: s.z, a: s.a, food: S.world.foodList() });
   } else if (m.t === 'i') {
     S.world.setInput(conn.peer, m.a, !!m.b);
@@ -421,8 +440,11 @@ function applySnapshot(m) {
 function gameOver(score, lbList) {
   if (S.screen === 'over') return;
   S.screen = 'over';
+  S.paused = false;
   el.endBtn.classList.add('hidden');
   el.minimap.classList.add('hidden');
+  el.pauseBtn.classList.add('hidden');
+  el.speedBox.classList.add('hidden');
   sfx.setBoost(false);
   S.lastBoost = null;
   if (S.own) S.own.dead = true;
@@ -459,11 +481,27 @@ function respawnMe() {
     S.own = S.world.get(S.ownId);
     S.lastOwnScore = 0;
     S.screen = 'playing';
+    S.paused = false;
+    el.pauseBtn.classList.remove('hidden');
+    el.speedBox.classList.remove('hidden');
     el.endBtn.classList.remove('hidden');
   el.minimap.classList.remove('hidden');
     hideOverlay();
     sfx.start();
   }
+}
+
+/* ---------- pause (solo only: the host must keep simulating for friends) ---------- */
+function togglePause(force) {
+  if (S.screen !== 'playing' || S.mode !== 'solo') return;
+  const want = typeof force === 'boolean' ? force : !S.paused;
+  if (want === S.paused) return;
+  S.paused = want;
+  sfx.setBoost(false);
+  S.lastBoost = null;
+  if (S.paused) showPanel('pause');
+  else hideOverlay();
+  el.pauseBtn.textContent = S.paused ? '▶' : '⏸';
 }
 
 /* ---------- input ---------- */
@@ -492,6 +530,7 @@ window.addEventListener('keydown', (e) => {
     if (S.screen === 'over') respawnMe();
   }
   if (e.code === 'KeyM') toggleMute();
+  if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
 });
 window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') S.spaceHeld = false;
@@ -507,6 +546,13 @@ function steerToward(x, y) {
   const sy = y - window.innerHeight / 2;
   if (Math.hypot(sx, sy) > 24) S.input.a = Math.atan2(sy, sx);
 }
+/* touch joystick: the snake turns the way you drag, relative to where your finger first landed */
+function steerJoystick(x, y) {
+  const o = S.steerOrigin;
+  if (!o) return;
+  const dx = x - o.x, dy = y - o.y;
+  if (Math.hypot(dx, dy) > 18) S.input.a = Math.atan2(dy, dx);
+}
 function applyTouchBoost() {
   S.touchBoost = activeTouches.size >= 2 && !pinchRef;
 }
@@ -519,7 +565,7 @@ window.addEventListener('pointerdown', (e) => {
   activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (activeTouches.size === 1) {
     steerTouchId = e.pointerId;
-    steerToward(e.clientX, e.clientY);
+    S.steerOrigin = { x: e.clientX, y: e.clientY };
   } else {
     S.touchBoost = true;
     pinchRef = null;
@@ -539,13 +585,13 @@ window.addEventListener('pointermove', (e) => {
     }
     applyTouchBoost();
   } else if (e.pointerId === steerTouchId) {
-    steerToward(e.clientX, e.clientY);
+    steerJoystick(e.clientX, e.clientY);
   }
 });
 function pointerEnd(e) {
   if (e.pointerType === 'mouse') { S.mouseBoost = false; return; }
   activeTouches.delete(e.pointerId);
-  if (e.pointerId === steerTouchId) steerTouchId = null;
+  if (e.pointerId === steerTouchId) { steerTouchId = null; S.steerOrigin = null; }
   if (activeTouches.size < 2) pinchRef = null;
   applyTouchBoost();
 }
@@ -561,6 +607,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && S.screen === 'playing' && S.mode !== 'client') {
     /* host keeps simulating so friends keep playing; just drop boost */
     S.spaceHeld = S.mouseBoost = S.touchBoost = false;
+    if (S.mode === 'solo') togglePause(true);
   }
 });
 
@@ -571,6 +618,8 @@ function toggleMute() {
   sfx.setBoost(false);
 }
 el.muteBtn.addEventListener('click', toggleMute);
+el.pauseBtn.addEventListener('click', () => { sfx.init(); togglePause(); });
+el.btnResume.addEventListener('click', () => { sfx.init(); togglePause(false); });
 
 /* ---------- menu wiring ---------- */
 function readName() {
@@ -701,6 +750,38 @@ function buildSkinPicker() {
   refreshSkinPicker();
 }
 
+/* ---------- speed slider + spawn size ---------- */
+function applySpeed() {
+  el.speedVal.textContent = S.speedMul.toFixed(2).replace(/\.0$/, '') + '×';
+  if (S.world && S.mode !== 'client') S.world.speedMul = S.speedMul;
+}
+el.speedSlider.addEventListener('input', () => {
+  S.speedMul = parseFloat(el.speedSlider.value) || 1.3;
+  try { localStorage.setItem('jungle-snake-speed', String(S.speedMul)); } catch { /* private mode */ }
+  applySpeed();
+});
+const SIZES = [['SMALL', 10], ['MEDIUM', 16], ['LARGE', 24]];
+function buildSizePicker() {
+  el.sizeRow.innerHTML = '';
+  SIZES.forEach(([name, mass]) => {
+    const b = document.createElement('button');
+    b.className = 'stylebtn';
+    b.textContent = name;
+    b.dataset.mass = String(mass);
+    b.addEventListener('click', () => {
+      sfx.init();
+      S.spawnMass = mass;
+      try { localStorage.setItem('jungle-snake-size', String(mass)); } catch { /* private mode */ }
+      refreshSizePicker();
+    });
+    el.sizeRow.appendChild(b);
+  });
+  refreshSizePicker();
+}
+function refreshSizePicker() {
+  [...el.sizeRow.children].forEach((b) => b.classList.toggle('sel', Number(b.dataset.mass) === S.spawnMass));
+}
+
 /* ---------- minimap ---------- */
 function drawMinimap(list) {
   const cv = el.minimap;
@@ -759,6 +840,7 @@ function loop(now) {
 }
 
 function tick(dt) {
+  if (S.paused) return;
   const playing = S.screen === 'playing';
   const boost = playing && boostNow();
   if (boost !== S.lastBoost) {
@@ -934,8 +1016,19 @@ try {
   const savedSkin = JSON.parse(localStorage.getItem('jungle-snake-skin') || 'null');
   if (savedSkin && Number.isInteger(savedSkin.sp) && savedSkin.sp >= 0 && savedSkin.sp < SPECIES.length) S.skin = { sp: savedSkin.sp, v: (savedSkin.v | 0) & 3 };
 } catch { /* ignore */ }
+try {
+  const sv = parseFloat(localStorage.getItem('jungle-snake-speed'));
+  if (sv >= 1 && sv <= 2.5) S.speedMul = sv;
+} catch { /* ignore */ }
+try {
+  const sm = parseInt(localStorage.getItem('jungle-snake-size'), 10);
+  if (sm === 10 || sm === 16 || sm === 24) S.spawnMass = sm;
+} catch { /* ignore */ }
 el.nameInput.value = S.name;
 buildSkinPicker();
+buildSizePicker();
+el.speedSlider.value = String(S.speedMul);
+applySpeed();
 const roomParam = params.get('room');
 if (roomParam) el.codeInput.value = roomParam.toUpperCase();
 ensureView();

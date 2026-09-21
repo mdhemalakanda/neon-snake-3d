@@ -75,11 +75,11 @@ export function seedTrail(s) {
   s.trail.length = 0;
   s.trailD.length = 0;
   const dx = -Math.cos(s.a), dz = -Math.sin(s.a);
-  for (let i = 60; i >= 1; i--) {
-    s.trail.push({ x: s.x + dx * i * 0.15, z: s.z + dz * i * 0.15 });
-    s.trailD.push((60 - i) * 0.15);
+  for (let i = 100; i >= 1; i--) {
+    s.trail.push({ x: s.x + dx * i * 0.16, z: s.z + dz * i * 0.16 });
+    s.trailD.push((100 - i) * 0.16);
   }
-  s.trailDist = 9;
+  s.trailDist = 16;
 }
 
 export function makeSnake(id, name, x, z, a) {
@@ -97,12 +97,13 @@ export function makeSnake(id, name, x, z, a) {
   return s;
 }
 
-/* One kinematic tick: turn toward target angle, move, grow the trail. */
-export function stepKinematics(s, dt) {
-  const tr = s.boost ? CFG.TURN_BOOST : CFG.TURN;
+/* One kinematic tick: turn toward target angle, move, grow the trail.
+   mul scales speed AND turn rate, so higher speed keeps the same turning circle. */
+export function stepKinematics(s, dt, mul = 1) {
+  const tr = (s.boost ? CFG.TURN_BOOST : CFG.TURN) * mul;
   const da = wrapAngle(s.targetA - s.a);
   s.a = wrapAngle(s.a + Math.max(-tr * dt, Math.min(tr * dt, da)));
-  const sp = s.boost ? CFG.BOOST : CFG.SPEED;
+  const sp = (s.boost ? CFG.BOOST : CFG.SPEED) * mul;
   const mx = Math.cos(s.a) * sp * dt, mz = Math.sin(s.a) * sp * dt;
   s.x += mx; s.z += mz;
   s.trail.push({ x: s.x, z: s.z });
@@ -153,6 +154,7 @@ export class World {
     this.foodSeq = 1;
     this.snakes = new Map();    // id -> snake
     this.time = 0;
+    this.speedMul = 1;          // set by the UI (solo/host); scales speed + turn rate
     this.eatenIds = [];         // food deltas since last takeEvents()
     this.addedFoods = [];       // [id, x, z, v]
     this.deaths = [];           // {id, name, score}
@@ -173,10 +175,27 @@ export class World {
     return id;
   }
 
+  /* pick a spawn point that keeps a distance from every living snake */
+  safeSpawnPos() {
+    let best = null, bestD = -1;
+    for (let tries = 0; tries < 12; tries++) {
+      const a = this.rng() * Math.PI * 2;
+      const r = this.rng() * CFG.R * 0.35;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      let d = Infinity;
+      for (const o of this.snakes.values()) {
+        if (o.dead) continue;
+        d = Math.min(d, Math.hypot(o.x - x, o.z - z));
+      }
+      if (d === Infinity || d > 30) return { x, z };
+      if (d > bestD) { bestD = d; best = { x, z }; }
+    }
+    return best;
+  }
+
   addSnake(id, name, bot = false, skin = null) {
-    const a = this.rng() * Math.PI * 2;
-    const r = this.rng() * CFG.R * 0.35;
-    const s = makeSnake(id, name, Math.cos(a) * r, Math.sin(a) * r, a);
+    const p = this.safeSpawnPos();
+    const s = makeSnake(id, name, p.x, p.z, this.rng() * Math.PI * 2);
     s.bot = bot;
     if (skin && typeof skin.sp === 'number') s.skin = { sp: skin.sp | 0, v: (skin.v | 0) & 3 };
     this.snakes.set(id, s);
@@ -186,10 +205,9 @@ export class World {
   respawn(id) {
     const s = this.snakes.get(id);
     if (!s) return null;
-    const a = this.rng() * Math.PI * 2;
-    const r = this.rng() * CFG.R * 0.35;
-    s.x = Math.cos(a) * r;
-    s.z = Math.sin(a) * r;
+    const p = this.safeSpawnPos();
+    s.x = p.x;
+    s.z = p.z;
     s.a = this.rng() * Math.PI * 2;
     s.targetA = s.a;
     s.mass = CFG.START_MASS;
@@ -227,7 +245,7 @@ export class World {
         }
         continue;
       }
-      stepKinematics(s, dt);
+      stepKinematics(s, dt, this.speedMul);
       if (s.boost) {
         s.mass = Math.max(CFG.MIN_BOOST_MASS * 0.7, s.mass - CFG.BOOST_DRAIN * dt);
         s.dropT -= dt;
@@ -246,7 +264,11 @@ export class World {
         const ro = radiusOf(o.mass);
         const hdx = o.x - s.x, hdz = o.z - s.z;
         const hh = (rr + ro) * 0.8;
-        if (hdx * hdx + hdz * hdz < hh * hh) { this.kill(s); break; }
+        if (hdx * hdx + hdz * hdz < hh * hh) {
+          /* head-to-head: the smaller snake loses */
+          if (s.mass < o.mass) this.kill(s); else this.kill(o);
+          break;
+        }
         const lim = rr * 0.8 + ro * 0.78;
         const lim2 = lim * lim;
         let hit = false;
