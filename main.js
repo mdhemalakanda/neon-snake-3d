@@ -533,14 +533,14 @@ function tick(dt) {
   const list = [];
   if (S.mode === 'client') {
     if (S.own && !S.own.dead) {
-      list.push({ id: S.ownId, name: S.name, pts: sampleBody(S.own), thickness: radiusOf(S.own.mass), angle: S.own.a });
+      list.push({ id: S.ownId, name: S.name, pts: sampleBody(S.own), thickness: radiusOf(S.own.mass), angle: S.own.a, showName: false });
     }
     for (const r of S.remotes.values()) {
-      list.push({ id: r.id, name: r.name, pts: sampleBody(r), thickness: radiusOf(r.mass), angle: r.a });
+      list.push({ id: r.id, name: r.name, pts: sampleBody(r), thickness: radiusOf(r.mass), angle: r.a, showName: true });
     }
   } else if (S.world) {
     for (const s of S.world.alive()) {
-      list.push({ id: s.id, name: s.name, pts: s.body.length ? s.body : sampleBody(s), thickness: radiusOf(s.mass), angle: s.a });
+      list.push({ id: s.id, name: s.name, pts: s.body.length ? s.body : sampleBody(s), thickness: radiusOf(s.mass), angle: s.a, showName: s.id !== S.ownId });
     }
   }
   S.view.updateSnakes(list, S.time);
@@ -600,7 +600,16 @@ if (params.get('autopilot') === 'eat') {
   }
 } else if (params.get('autopilot') === 'live') {
   S.name = (params.get('name') || 'PILOT').toUpperCase();
-  setTimeout(() => startSoloFlow(), 50);
+  setTimeout(() => {
+    startSoloFlow();
+    const bot = [...S.world.snakes.values()].find((s) => s.bot);
+    if (bot) {
+      bot.x = S.own.x + 7; bot.z = S.own.z + 3;
+      bot.a = Math.PI; bot.targetA = Math.PI;
+      seedTrail(bot);
+      bot.name = 'NEARBOT';
+    }
+  }, 50);
 }
 
 if (params.get('nettest') === 'host') {

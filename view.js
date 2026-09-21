@@ -20,6 +20,14 @@ const segMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5,
 
 const FOOD_COLORS = { 1: 0.52, 2: 0.9, 3: 0.13 };
 
+const nameRedraws = new Set();
+function registerNameRedraw(fn) {
+  nameRedraws.add(fn);
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => { try { fn(); } catch { /* sprite gone */ } });
+  }
+}
+
 class SnakeView {
   constructor(scene, name, hue) {
     this.hue = hue;
@@ -55,7 +63,7 @@ class SnakeView {
     this._sc = new THREE.Vector3();
   }
 
-  update(pts, thickness, angle, time, scene) {
+  update(pts, thickness, angle, time, scene, showName, fade) {
     const n = Math.min(pts.length, CFG.MAX_SEGS);
     const rotY = Math.atan2(Math.cos(angle), Math.sin(angle));
     this._q.setFromAxisAngle(UP, rotY);
@@ -83,13 +91,16 @@ class SnakeView {
     this.head.rotation.y = rotY;
     this.head.scale.setScalar(thickness);
     this.headMat.emissiveIntensity = 0.45 + 0.15 * Math.sin(time * 3);
-    this.sprite.position.set(hp.x, 0.45 + thickness * 2.4 + 1.1, hp.z);
-    const sp = 1.6 + thickness * 1.9;
-    this.sprite.scale.set(sp * 4, sp, 1);
+    this.sprite.visible = showName !== false && fade > 0.02;
+    this.sprite.material.opacity = 0.95 * fade;
+    this.sprite.position.set(hp.x, 0.45 + thickness * 2.1 + 0.8, hp.z);
+    const hs = 0.7 + thickness * 0.65;
+    this.sprite.scale.set(hs * 3.6, hs, 1);
   }
 
   dispose(scene) {
     scene.remove(this.inst, this.head, this.sprite);
+    if (this.sprite.userData.redraw) nameRedraws.delete(this.sprite.userData.redraw);
     this.headMat.dispose();
     this.sprite.material.map.dispose();
     this.sprite.material.dispose();
@@ -346,19 +357,27 @@ export class View {
   static makeNameSprite(name, hue) {
     const cv = document.createElement('canvas');
     cv.width = 512; cv.height = 128;
-    const ctx = cv.getContext('2d');
-    ctx.font = '700 72px Orbitron, "Avenir Next", "Trebuchet MS", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 12;
-    ctx.strokeStyle = 'rgba(2, 6, 16, 0.9)';
-    ctx.strokeText(name, 256, 66);
-    ctx.fillStyle = `hsl(${(hue * 360) | 0}, 100%, 80%)`;
-    ctx.fillText(name, 256, 66);
     const tex = new THREE.CanvasTexture(cv);
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false });
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
     const sp = new THREE.Sprite(mat);
     sp.renderOrder = 10;
+    const draw = () => {
+      const ctx = cv.getContext('2d');
+      ctx.clearRect(0, 0, 512, 128);
+      ctx.font = '700 54px Orbitron, "Avenir Next", "Trebuchet MS", sans-serif';
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '5px';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = 'rgba(3, 8, 18, 0.85)';
+      ctx.strokeText(name, 256, 66);
+      ctx.fillStyle = `hsl(${(hue * 360) | 0}, 85%, 78%)`;
+      ctx.fillText(name, 256, 66);
+      tex.needsUpdate = true;
+    };
+    draw();
+    registerNameRedraw(draw);
+    sp.userData.redraw = draw;
     return sp;
   }
 
@@ -372,7 +391,9 @@ export class View {
         sv = new SnakeView(this.scene, item.name, hueOf(item.id));
         this.snakeViews.set(item.id, sv);
       }
-      sv.update(item.pts, item.thickness, item.angle, time, this.scene);
+      const cd = Math.hypot(item.pts[0].x - this.camera.position.x, item.pts[0].z - this.camera.position.z);
+      const fade = Math.max(0, Math.min(1, 1.25 - cd / 80));
+      sv.update(item.pts, item.thickness, item.angle, time, this.scene, item.showName, fade);
     }
     for (const [id, sv] of this.snakeViews) {
       if (!seen.has(id)) {
