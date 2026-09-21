@@ -172,8 +172,14 @@ class SnakeView {
 
 export class View {
   constructor(canvas) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    this.isMobileLike = coarse || Math.min(window.innerWidth, window.innerHeight) < 500;
+    this.baseDpr = Math.min(window.devicePixelRatio || 1, this.isMobileLike ? 1.3 : 2);
+    this.resScale = this.isMobileLike ? 0.85 : 1;
+    this.frameAvg = 16;
+    this.lastAdjust = 0;
+    this.foodFlip = false;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
 
@@ -213,7 +219,7 @@ export class View {
 
   onResize() {
     const w = window.innerWidth, h = window.innerHeight;
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    const pr = this.baseDpr * this.resScale;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
     this.composer.setPixelRatio(pr);
@@ -276,7 +282,7 @@ export class View {
   }
 
   initDust() {
-    const N = 420;
+    const N = this.isMobileLike ? 240 : 420;
     const pos = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
       const r = 40 + Math.random() * 160;
@@ -337,7 +343,7 @@ export class View {
   }
 
   initParticles() {
-    const PMAX = (this.PMAX = 900);
+    const PMAX = (this.PMAX = this.isMobileLike ? 450 : 900);
     this.pPos = new Float32Array(PMAX * 3);
     this.pCol = new Float32Array(PMAX * 3);
     this.pBase = new Float32Array(PMAX * 3);
@@ -486,9 +492,23 @@ export class View {
   render(dt, time) {
     this.groundUniforms.uTime.value = time;
     this.dust.rotation.y += dt * 0.006;
-    this.updateFood(time);
+    this.foodFlip = !this.foodFlip;
+    if (this.foodFlip) this.updateFood(time);
     this.updateParticles(dt);
     this.bloom.strength = 0.85 + this.boostAmt * 0.5;
     this.composer.render();
+    this.frameAvg = this.frameAvg * 0.95 + Math.min(dt, 0.1) * 1000 * 0.05;
+    const ms = performance.now();
+    if (!navigator.webdriver && ms - this.lastAdjust > 2500 && this.frameAvg > 1) {
+      this.lastAdjust = ms;
+      const fps = 1000 / this.frameAvg;
+      if (fps < 40 && this.resScale > 0.55) {
+        this.resScale = Math.max(0.55, this.resScale - 0.15);
+        this.onResize();
+      } else if (fps > 56 && this.resScale < 1) {
+        this.resScale = Math.min(1, this.resScale + 0.1);
+        this.onResize();
+      }
+    }
   }
 }
