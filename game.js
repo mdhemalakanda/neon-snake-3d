@@ -246,7 +246,7 @@ export class World {
         const ro = radiusOf(o.mass);
         const hdx = o.x - s.x, hdz = o.z - s.z;
         const hh = (rr + ro) * 0.8;
-        if (hdx * hdx + hdz * hdz < hh * hh) { this.kill(s); this.kill(o); break; }
+        if (hdx * hdx + hdz * hdz < hh * hh) { this.kill(s); break; }
         const lim = rr * 0.8 + ro * 0.78;
         const lim2 = lim * lim;
         let hit = false;
